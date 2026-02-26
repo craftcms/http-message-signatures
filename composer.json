@@ -1,0 +1,67 @@
+{
+    "name": "timkelty/http-message-signatures",
+    "description": "PSR-7 compliant PHP 8.4+ implementation of HTTP Message Signatures (RFC 9421)",
+    "type": "library",
+    "keywords": ["http", "signature", "rfc9421", "security", "authentication", "laravel"],
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "psr/http-message": "^2.0",
+        "bakame/http-structured-fields": "^1.0"
+    },
+    "suggest": {
+        "illuminate/support": "^11.0|^12.0 - Required for Laravel integration"
+    },
+    "require-dev": {
+        "pestphp/pest": "^2.0",
+        "pestphp/pest-plugin-arch": "^2.0",
+        "phpstan/phpstan": "^1.10",
+        "phpstan/extension-installer": "^1.3",
+        "laravel/pint": "^1.13",
+        "guzzlehttp/psr7": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "HttpMessageSignatures\\": "src/"
+        },
+        "files": [
+            "src/Laravel/Helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "HttpMessageSignatures\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "test-coverage": "pest --coverage",
+        "pint": "pint",
+        "pint-test": "pint --test",
+        "phpstan": "phpstan analyse",
+        "analyse": [
+            "@pint-test",
+            "@phpstan",
+            "@test"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "HttpMessageSignatures\\Laravel\\HttpMessageSignaturesServiceProvider"
+            ],
+            "aliases": {
+                "HttpMessageSigner": "HttpMessageSignatures\\Laravel\\Facades\\HttpMessageSigner",
+                "HttpMessageVerifier": "HttpMessageSignatures\\Laravel\\Facades\\HttpMessageVerifier"
+            }
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "phpstan/extension-installer": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
