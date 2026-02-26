@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace HttpMessageSignatures;
 
+use Bakame\Http\StructuredFields\Dictionary;
+use Bakame\Http\StructuredFields\InnerList;
+use Bakame\Http\StructuredFields\Item;
+use Bakame\Http\StructuredFields\Parameters;
 use HttpMessageSignatures\Algorithm\AlgorithmInterface;
 use HttpMessageSignatures\Exception\SignatureException;
 use Psr\Http\Message\MessageInterface;
@@ -11,147 +15,143 @@ use Psr\Http\Message\RequestInterface;
 
 /**
  * Signs HTTP messages according to RFC 9421.
+ *
+ * @see https://www.rfc-editor.org/rfc/rfc9421.html#section-3.1
  */
 class Signer
 {
-    private AlgorithmInterface $algorithm;
-    private StructuredFieldParser $parser;
-    private SignatureBaseStringBuilder $baseStringBuilder;
+    private SignatureBase $signatureBase;
 
     public function __construct(
-        AlgorithmInterface $algorithm,
-        ?StructuredFieldParser $parser = null,
-        ?SignatureBaseStringBuilder $baseStringBuilder = null
+        private readonly AlgorithmInterface $algorithm,
+        SignatureBase $signatureBase = null,
     ) {
-        $this->algorithm = $algorithm;
-        $this->parser = $parser ?? new StructuredFieldParser();
-        $this->baseStringBuilder = $baseStringBuilder ?? new SignatureBaseStringBuilder();
+        $this->signatureBase = $signatureBase ?? new SignatureBase();
     }
 
     /**
      * Sign an HTTP message.
      *
-     * @param MessageInterface $message The message to sign
-     * @param array<string> $components The component identifiers to include in the signature
-     * @param array<string, mixed> $options Signing options:
-     *   - keyid: string (required) - Key identifier
-     *   - signatureId: string (default: "sig1") - Signature identifier
-     *   - created: int|null - Creation timestamp
-     *   - expires: int|null - Expiration timestamp
-     *   - nonce: string|null - Nonce value
-     *   - tag: string|null - Tag value
-     *   - originalRequest: RequestInterface|null - Original request (for response signing)
-     * @return MessageInterface The signed message
+     * @param  MessageInterface  $message  The message to sign
+     * @param  array<string>  $components  Component identifier strings (e.g., ["@method", "@path", "content-type"])
+     * @param  array<string, mixed>  $options  Signing options:
+     *                                         - signatureId: string (default: "sig1") - Signature label
+     *                                         - keyid: string|null - Key identifier
+     *                                         - created: int|false|null - Creation timestamp (defaults to current time, false to omit)
+     *                                         - expires: int|null - Expiration timestamp
+     *                                         - nonce: string|null - Nonce value
+     *                                         - tag: string|null - Tag value
+     *                                         - originalRequest: RequestInterface|null - Original request (for response signing)
+     * @return MessageInterface The signed message with Signature and Signature-Input headers
+     *
      * @throws SignatureException
      */
     public function sign(MessageInterface $message, array $components, array $options = []): MessageInterface
     {
-        $this->ensureComponentsAreProvided($components);
-        $keyId = $this->extractRequiredKeyId($options);
-        $signatureId = $this->extractSignatureId($options);
-        $signatureParameters = $this->buildSignatureParameters($options, $keyId);
-        $originalRequest = $options['originalRequest'] ?? null;
-
-        $signatureBaseString = $this->buildSignatureBaseString(
-            $components,
-            $message,
-            $originalRequest,
-            $signatureParameters
-        );
-
-        $signatureValue = $this->algorithm->sign($signatureBaseString);
-
-        return $this->attachSignatureHeaders(
-            $message,
-            $signatureId,
-            $components,
-            $signatureParameters,
-            $signatureValue
-        );
-    }
-
-    private function ensureComponentsAreProvided(array $components): void
-    {
-        if (empty($components)) {
+        if ($components === []) {
             throw new SignatureException('At least one component must be specified');
         }
-    }
 
-    private function extractRequiredKeyId(array $options): string
-    {
-        $keyId = $options['keyid'] ?? null;
-        if (empty($keyId)) {
-            throw new SignatureException('keyid is required');
-        }
+        $signatureId = $options['signatureId'] ?? 'sig1';
+        $originalRequest = $options['originalRequest'] ?? null;
 
-        return $keyId;
-    }
+        // Convert component strings to bakame Item objects
+        $componentItems = array_map($this->parseComponentIdentifier(...), $components);
 
-    private function extractSignatureId(array $options): string
-    {
-        return $options['signatureId'] ?? DefaultValues::DEFAULT_SIGNATURE_ID;
-    }
+        // Build signature parameters
+        $signatureParameters = $this->buildSignatureParameters($options);
 
-    private function buildSignatureParameters(array $options, string $keyId): array
-    {
-        $parameters = [
-            SignatureParameters::CREATED => $options['created'] ?? time(),
-            SignatureParameters::KEY_ID => $keyId,
-        ];
+        // Create the InnerList: (component-items);params
+        $signatureInput = InnerList::fromAssociative($componentItems, $signatureParameters);
 
-        $this->addOptionalParameterIfPresent($parameters, SignatureParameters::EXPIRES, $options['expires'] ?? null);
-        $this->addOptionalParameterIfPresent($parameters, SignatureParameters::NONCE, $options['nonce'] ?? null);
-        $this->addOptionalParameterIfPresent($parameters, SignatureParameters::TAG, $options['tag'] ?? null);
-        $this->addAlgorithmIfNotDefault($parameters);
+        // Build the signature base string
+        $signatureBaseString = $this->signatureBase->build($signatureInput, $message, $originalRequest);
 
-        return $parameters;
-    }
+        // Sign the base string (returns raw bytes)
+        $rawSignature = $this->algorithm->sign($signatureBaseString);
 
-    private function addOptionalParameterIfPresent(array &$parameters, string $key, mixed $value): void
-    {
-        if ($value !== null) {
-            $parameters[$key] = $value;
-        }
-    }
+        // Build the Signature-Input and Signature headers as Dictionaries
+        $signatureInputDict = Dictionary::new()->add($signatureId, $signatureInput);
+        $signatureDict = Dictionary::new()->add($signatureId, Item::fromDecodedBytes($rawSignature));
 
-    private function addAlgorithmIfNotDefault(array &$parameters): void
-    {
-        $algorithmId = $this->algorithm->getAlgorithmId();
-        $isDefaultAlgorithm = $algorithmId === 'hmac-sha256';
-
-        if (!$isDefaultAlgorithm) {
-            $parameters[SignatureParameters::ALGORITHM] = $algorithmId;
-        }
-    }
-
-    private function buildSignatureBaseString(
-        array $components,
-        MessageInterface $message,
-        ?RequestInterface $originalRequest,
-        array $signatureParameters
-    ): string {
-        return $this->baseStringBuilder->build(
-            $components,
-            $message,
-            $originalRequest,
-            $signatureParameters
-        );
-    }
-
-    private function attachSignatureHeaders(
-        MessageInterface $message,
-        string $signatureId,
-        array $components,
-        array $signatureParameters,
-        string $signatureValue
-    ): MessageInterface {
-        $signatureInputValue = $this->parser->formatSignatureInput($signatureId, $components, $signatureParameters);
-        $message = $this->appendHeader($message, SignatureHeaders::SIGNATURE_INPUT, $signatureInputValue);
-
-        $signatureHeaderValue = $this->parser->formatSignature($signatureId, $signatureValue);
-        $message = $this->appendHeader($message, SignatureHeaders::SIGNATURE, $signatureHeaderValue);
+        // Append headers to the message
+        $message = $this->appendHeader($message, 'Signature-Input', $signatureInputDict->toHttpValue());
+        $message = $this->appendHeader($message, 'Signature', $signatureDict->toHttpValue());
 
         return $message;
+    }
+
+    /**
+     * Parse a component identifier string into a bakame Item.
+     *
+     * Per RFC 9421, component identifiers are serialized as string Items
+     * in the inner list (e.g., "@method", "content-type").
+     *
+     * Accepts both user-friendly and structured field formats:
+     * - "@method" -> Item with string value "@method"
+     * - "content-type" -> Item with string value "content-type"
+     * - '@query-param;name="foo"' -> parsed as structured field Item with parameters
+     */
+    private function parseComponentIdentifier(string $identifier): Item
+    {
+        // If it contains parameters (e.g., @query-param;name="foo"), parse as structured field Item
+        if (str_contains($identifier, ';')) {
+            // Ensure the base identifier is quoted for structured field parsing
+            // User may pass @query-param;name="foo" but we need "@query-param";name="foo"
+            if (!str_starts_with($identifier, '"')) {
+                /** @var int $semiPos — guaranteed by str_contains check above */
+                $semiPos = (int) strpos($identifier, ';');
+                $base = substr($identifier, 0, $semiPos);
+                $params = substr($identifier, $semiPos);
+                $identifier = '"' . strtolower($base) . '"' . $params;
+            }
+
+            return Item::fromHttpValue($identifier);
+        }
+
+        // All component identifiers are string Items in RFC 9421
+        return Item::fromString(strtolower($identifier));
+    }
+
+    /**
+     * Build signature parameters from options.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    private function buildSignatureParameters(array $options): Parameters
+    {
+        $params = [];
+
+        // created: defaults to current time, set to false to omit
+        $created = $options['created'] ?? time();
+        if ($created !== false) {
+            $params['created'] = (int) $created;
+        }
+
+        // Optional parameters
+        if (isset($options['expires'])) {
+            $params['expires'] = (int) $options['expires'];
+        }
+
+        if (isset($options['nonce'])) {
+            $params['nonce'] = (string) $options['nonce'];
+        }
+
+        // alg: always set from the algorithm
+        $algId = $this->algorithm->getAlgorithmId();
+        if ($algId !== '') {
+            $params['alg'] = $algId;
+        }
+
+        if (isset($options['keyid'])) {
+            $params['keyid'] = (string) $options['keyid'];
+        }
+
+        if (isset($options['tag'])) {
+            $params['tag'] = (string) $options['tag'];
+        }
+
+        return Parameters::fromAssociative($params);
     }
 
     /**
@@ -160,10 +160,10 @@ class Signer
     private function appendHeader(MessageInterface $message, string $headerName, string $headerValue): MessageInterface
     {
         $existingHeaderValues = $message->getHeader($headerName);
-        $hasExistingHeaders = !empty($existingHeaderValues);
 
-        if ($hasExistingHeaders) {
+        if ($existingHeaderValues !== []) {
             $combinedHeaderValue = implode(', ', $existingHeaderValues) . ', ' . $headerValue;
+
             return $message->withHeader($headerName, $combinedHeaderValue);
         }
 

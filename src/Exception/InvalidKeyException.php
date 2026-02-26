@@ -7,7 +7,4 @@ namespace HttpMessageSignatures\Exception;
 /**
  * Exception thrown when a key is invalid.
  */
-class InvalidKeyException extends \RuntimeException implements ExceptionInterface
-{
-}
-
+class InvalidKeyException extends \RuntimeException implements ExceptionInterface {}

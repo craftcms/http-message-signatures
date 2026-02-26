@@ -2,128 +2,116 @@
 
 declare(strict_types=1);
 
+namespace HttpMessageSignatures\Tests\Unit;
+
 use GuzzleHttp\Psr7\Request;
 use HttpMessageSignatures\Algorithm\HmacSha256;
 use HttpMessageSignatures\Exception\SignatureException;
 use HttpMessageSignatures\Signer;
+use PHPUnit\Framework\TestCase;
 
-beforeEach(function () {
-    $this->algorithm = new HmacSha256('secret-key');
-    $this->signer = new Signer($this->algorithm);
-    $this->request = new Request('POST', 'https://example.com/path', [
-        'Content-Type' => 'application/json',
-        'Date' => 'Mon, 01 Jan 2024 12:00:00 GMT',
-    ], '{"data":"value"}');
-});
+final class SignerTest extends TestCase
+{
+    private Signer $signer;
 
-test('signs a request with signature headers', function () {
-    $signed = $this->signer->sign(
-        $this->request,
-        ['@method', '@path', '@authority', 'content-type'],
-        ['keyid' => 'test-key']
-    );
-    
-    expect($signed->hasHeader('Signature-Input'))->toBeTrue()
-        ->and($signed->hasHeader('Signature'))->toBeTrue();
-});
+    private Request $request;
 
-test('throws exception when keyid is missing', function () {
-    expect(fn() => $this->signer->sign(
-        $this->request,
-        ['@method', '@path'],
-        []
-    ))->toThrow(SignatureException::class, 'keyid is required');
-});
+    protected function setUp(): void
+    {
+        $algorithm = new HmacSha256('test-secret-key-for-signing');
+        $this->signer = new Signer($algorithm);
+        $this->request = new Request(
+            'POST',
+            'https://example.com/foo',
+            [
+                'Host' => 'example.com',
+                'Content-Type' => 'application/json',
+                'Date' => 'Tue, 20 Apr 2021 02:07:55 GMT',
+            ],
+            '{"hello":"world"}',
+        );
+    }
 
-test('throws exception when components are empty', function () {
-    expect(fn() => $this->signer->sign(
-        $this->request,
-        [],
-        ['keyid' => 'test-key']
-    ))->toThrow(SignatureException::class, 'At least one component must be specified');
-});
+    public function testSignAddsSignatureInputAndSignatureHeaders(): void
+    {
+        $signed = $this->signer->sign(
+            $this->request,
+            ['@method', '@path', 'content-type'],
+            ['keyid' => 'test-key', 'created' => 1618884473],
+        );
 
-test('includes created timestamp by default', function () {
-    $signed = $this->signer->sign(
-        $this->request,
-        ['@method', '@path'],
-        ['keyid' => 'test-key']
-    );
-    
-    $signatureInput = $signed->getHeaderLine('Signature-Input');
-    
-    expect($signatureInput)->toContain('created=');
-});
+        $this->assertTrue($signed->hasHeader('Signature-Input'));
+        $this->assertTrue($signed->hasHeader('Signature'));
+    }
 
-test('includes expires when provided', function () {
-    $expires = time() + 300;
-    $signed = $this->signer->sign(
-        $this->request,
-        ['@method', '@path'],
-        [
-            'keyid' => 'test-key',
-            'expires' => $expires,
-        ]
-    );
-    
-    $signatureInput = $signed->getHeaderLine('Signature-Input');
-    
-    expect($signatureInput)->toContain('expires=');
-});
+    public function testSignatureInputContainsSignatureIdAndComponents(): void
+    {
+        $signed = $this->signer->sign(
+            $this->request,
+            ['@method', '@path', 'content-type'],
+            ['keyid' => 'test-key', 'created' => 1618884473],
+        );
 
-test('includes nonce when provided', function () {
-    $signed = $this->signer->sign(
-        $this->request,
-        ['@method', '@path'],
-        [
-            'keyid' => 'test-key',
-            'nonce' => 'random-nonce',
-        ]
-    );
-    
-    $signatureInput = $signed->getHeaderLine('Signature-Input');
-    
-    expect($signatureInput)->toContain('nonce=');
-});
+        $signatureInput = $signed->getHeaderLine('Signature-Input');
 
-test('uses custom signature ID', function () {
-    $signed = $this->signer->sign(
-        $this->request,
-        ['@method', '@path'],
-        [
-            'keyid' => 'test-key',
-            'signatureId' => 'custom-sig',
-        ]
-    );
-    
-    $signatureInput = $signed->getHeaderLine('Signature-Input');
-    
-    expect($signatureInput)->toContain('custom-sig=');
-});
+        $this->assertStringStartsWith('sig1=', $signatureInput);
+        $this->assertStringContainsString('@method', $signatureInput);
+        $this->assertStringContainsString('@path', $signatureInput);
+        $this->assertStringContainsString('"content-type"', $signatureInput);
+        $this->assertStringContainsString('keyid="test-key"', $signatureInput);
+    }
 
-test('returns new immutable request instance', function () {
-    $signed = $this->signer->sign(
-        $this->request,
-        ['@method', '@path'],
-        ['keyid' => 'test-key']
-    );
-    
-    expect($signed)->not->toBe($this->request)
-        ->and($this->request->hasHeader('Signature-Input'))->toBeFalse();
-});
+    public function testSignatureHeaderContainsBase64EncodedBytes(): void
+    {
+        $signed = $this->signer->sign($this->request, ['@method'], ['created' => 1618884473]);
 
-test('appends to existing signature headers', function () {
-    $request = $this->request->withHeader('Signature-Input', 'existing=("header");created=1234567890');
-    
-    $signed = $this->signer->sign(
-        $request,
-        ['@method', '@path'],
-        ['keyid' => 'test-key']
-    );
-    
-    $signatureInput = $signed->getHeaderLine('Signature-Input');
-    
-    expect($signatureInput)->toContain('existing=')
-        ->and($signatureInput)->toContain('sig1=');
-});
+        $signature = $signed->getHeaderLine('Signature');
 
+        $this->assertStringStartsWith('sig1=:', $signature);
+        $this->assertStringEndsWith(':', $signature);
+    }
+
+    public function testCustomSignatureId(): void
+    {
+        $signed = $this->signer->sign(
+            $this->request,
+            ['@method'],
+            ['signatureId' => 'custom-sig', 'created' => 1618884473],
+        );
+
+        $this->assertStringStartsWith('custom-sig=', $signed->getHeaderLine('Signature-Input'));
+    }
+
+    public function testOriginalRequestIsUnchanged(): void
+    {
+        $this->signer->sign($this->request, ['@method'], ['created' => 1618884473]);
+
+        $this->assertFalse($this->request->hasHeader('Signature-Input'));
+        $this->assertFalse($this->request->hasHeader('Signature'));
+    }
+
+    public function testThrowsWhenNoComponentsProvided(): void
+    {
+        $this->expectException(SignatureException::class);
+        $this->signer->sign($this->request, []);
+    }
+
+    public function testIncludesAlgParameter(): void
+    {
+        $signed = $this->signer->sign($this->request, ['@method'], ['created' => 1618884473]);
+
+        $this->assertStringContainsString('alg="hmac-sha256"', $signed->getHeaderLine('Signature-Input'));
+    }
+
+    public function testCreatedDefaultsToCurrentTime(): void
+    {
+        $signed = $this->signer->sign($this->request, ['@method']);
+        $this->assertStringContainsString('created=', $signed->getHeaderLine('Signature-Input'));
+    }
+
+    public function testCreatedCanBeOmittedWithFalse(): void
+    {
+        $signed = $this->signer->sign($this->request, ['@method'], ['created' => false]);
+        $this->assertStringNotContainsString('created=', $signed->getHeaderLine('Signature-Input'));
+    }
+}

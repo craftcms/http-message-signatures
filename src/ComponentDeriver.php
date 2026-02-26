@@ -4,210 +4,248 @@ declare(strict_types=1);
 
 namespace HttpMessageSignatures;
 
+use Bakame\Http\StructuredFields\Item;
+use Bakame\Http\StructuredFields\Token;
+use InvalidArgumentException;
 use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 
 /**
- * Derives signature components from HTTP messages.
+ * Derives component values from HTTP messages per RFC 9421 Section 2.
+ *
+ * @see https://www.rfc-editor.org/rfc/rfc9421.html#section-2
  */
 class ComponentDeriver
 {
     /**
      * Derive a component value from the message.
      *
-     * @param string $component The component identifier (e.g., "@method", "@path", "host")
-     * @param MessageInterface $message The HTTP message
-     * @param RequestInterface|null $originalRequest The original request (for response signing)
+     * @param  Item  $componentId  A bakame Item representing the component identifier (e.g., Token "@method" or string "content-type")
+     * @param  MessageInterface  $message  The HTTP message
+     * @param  RequestInterface|null  $originalRequest  The original request (for response signing with request-bound components)
      * @return string The derived component value
      */
     public function deriveComponent(
-        string $component,
+        Item $componentId,
         MessageInterface $message,
-        ?RequestInterface $originalRequest = null
+        RequestInterface $originalRequest = null,
     ): string {
-        if ($this->isDerivedComponent($component)) {
-            return $this->deriveDerivedComponent($component, $message, $originalRequest);
+        $value = $componentId->value();
+
+        // Per RFC 9421, component identifiers are string Items
+        if (is_string($value)) {
+            if (str_starts_with($value, '@')) {
+                return $this->deriveDerivedComponent($value, $componentId, $message, $originalRequest);
+            }
+
+            return $this->deriveHeaderComponent($value, $message);
         }
 
-        if ($this->isQueryParameterComponent($component)) {
-            return $this->deriveQueryParameterComponent($component, $message);
+        // Also support Token values for backwards compatibility
+        if ($value instanceof Token) {
+            $name = $value->toString();
+
+            if (str_starts_with($name, '@')) {
+                return $this->deriveDerivedComponent($name, $componentId, $message, $originalRequest);
+            }
+
+            return $this->deriveHeaderComponent($name, $message);
         }
 
-        return $this->deriveHeaderComponent($component, $message);
-    }
-
-    private function isDerivedComponent(string $component): bool
-    {
-        return str_starts_with($component, '@') && !str_starts_with($component, DerivedComponents::QUERY_PARAM_PREFIX);
-    }
-
-    private function isQueryParameterComponent(string $component): bool
-    {
-        return str_starts_with($component, DerivedComponents::QUERY_PARAM_PREFIX);
+        throw new InvalidArgumentException('Component identifier must be a string or token value');
     }
 
     private function deriveDerivedComponent(
-        string $component,
+        string $name,
+        Item $componentId,
         MessageInterface $message,
-        ?RequestInterface $originalRequest
+        ?RequestInterface $originalRequest,
     ): string {
-        $this->ensureMessageIsRequest($message, 'Derived components require a RequestInterface');
-
-        return match ($component) {
-            DerivedComponents::METHOD => $this->deriveMethod($message),
-            DerivedComponents::PATH => $this->derivePath($message),
-            DerivedComponents::QUERY => $this->deriveQuery($message),
-            DerivedComponents::AUTHORITY => $this->deriveAuthority($message),
-            DerivedComponents::SCHEME => $this->deriveScheme($message),
-            DerivedComponents::TARGET_URI => $this->deriveTargetUri($message),
-            DerivedComponents::REQUEST_TARGET => $this->deriveRequestTarget($message),
-            DerivedComponents::STATUS => $this->deriveStatus($message),
-            default => throw new \InvalidArgumentException("Unknown derived component: {$component}"),
+        return match ($name) {
+            '@method' => $this->deriveMethod($this->resolveRequest($message, $originalRequest, $name)),
+            '@target-uri' => $this->deriveTargetUri($this->resolveRequest($message, $originalRequest, $name)),
+            '@authority' => $this->deriveAuthority($this->resolveRequest($message, $originalRequest, $name)),
+            '@scheme' => $this->deriveScheme($this->resolveRequest($message, $originalRequest, $name)),
+            '@request-target' => $this->deriveRequestTarget($this->resolveRequest($message, $originalRequest, $name)),
+            '@path' => $this->derivePath($this->resolveRequest($message, $originalRequest, $name)),
+            '@query' => $this->deriveQuery($this->resolveRequest($message, $originalRequest, $name)),
+            '@query-param' => $this->deriveQueryParam($componentId, $this->resolveRequest(
+                $message,
+                $originalRequest,
+                $name,
+            )),
+            '@status' => $this->deriveStatus($message),
+            default => throw new InvalidArgumentException("Unknown derived component: {$name}"),
         };
     }
 
-    private function deriveMethod(MessageInterface $message): string
-    {
-        assert($message instanceof RequestInterface);
-        return strtoupper($message->getMethod());
-    }
-
-    private function derivePath(MessageInterface $message): string
-    {
-        assert($message instanceof RequestInterface);
-        return $message->getUri()->getPath();
-    }
-
-    private function deriveQuery(MessageInterface $message): string
-    {
-        assert($message instanceof RequestInterface);
-        return $message->getUri()->getQuery();
-    }
-
-    private function deriveAuthority(MessageInterface $message): string
-    {
-        assert($message instanceof RequestInterface);
-        $uri = $message->getUri();
-        $host = $uri->getHost();
-        $port = $uri->getPort();
-
-        $isNonDefaultPort = $port !== null && $this->isNonDefaultPortForScheme($port, $uri->getScheme());
-
-        return $isNonDefaultPort ? "{$host}:{$port}" : $host;
-    }
-
-    private function isNonDefaultPortForScheme(?int $port, string $scheme): bool
-    {
-        $defaultPort = $this->getDefaultPortForScheme($scheme);
-        return $port !== $defaultPort;
-    }
-
-    private function getDefaultPortForScheme(string $scheme): int
-    {
-        return match (strtolower($scheme)) {
-            'https' => DefaultValues::DEFAULT_HTTPS_PORT,
-            'http' => DefaultValues::DEFAULT_HTTP_PORT,
-            default => 0, // Unknown scheme, treat as non-default
-        };
-    }
-
-    private function deriveScheme(MessageInterface $message): string
-    {
-        assert($message instanceof RequestInterface);
-        return $message->getUri()->getScheme();
-    }
-
-    private function deriveTargetUri(MessageInterface $message): string
-    {
-        assert($message instanceof RequestInterface);
-        return (string) $message->getUri();
-    }
-
-    private function deriveRequestTarget(MessageInterface $message): string
-    {
-        assert($message instanceof RequestInterface);
-        $requestTarget = $message->getRequestTarget();
-
-        if ($requestTarget !== '/') {
-            return $requestTarget;
+    /**
+     * Resolve the request to use for request-targeted derived components.
+     * For responses, uses the original request if provided.
+     */
+    private function resolveRequest(
+        MessageInterface $message,
+        ?RequestInterface $originalRequest,
+        string $componentName,
+    ): RequestInterface {
+        if ($message instanceof RequestInterface) {
+            return $message;
         }
 
-        $uri = $message->getUri();
-        $path = $uri->getPath() ?: '/';
-        $query = $uri->getQuery();
+        if ($originalRequest !== null) {
+            return $originalRequest;
+        }
 
-        return $query ? "{$path}?{$query}" : $path;
+        throw new InvalidArgumentException(
+            "Derived component {$componentName} requires a RequestInterface or an original request for response signing",
+        );
     }
 
+    /**
+     * @see https://www.rfc-editor.org/rfc/rfc9421.html#section-2.2.1
+     */
+    private function deriveMethod(RequestInterface $request): string
+    {
+        return strtoupper($request->getMethod());
+    }
+
+    /**
+     * @see https://www.rfc-editor.org/rfc/rfc9421.html#section-2.2.2
+     */
+    private function deriveTargetUri(RequestInterface $request): string
+    {
+        return (string) $request->getUri();
+    }
+
+    /**
+     * @see https://www.rfc-editor.org/rfc/rfc9421.html#section-2.2.3
+     */
+    private function deriveAuthority(RequestInterface $request): string
+    {
+        $uri = $request->getUri();
+        $host = strtolower($uri->getHost());
+        $port = $uri->getPort();
+        $scheme = strtolower($uri->getScheme());
+
+        if ($port !== null && !$this->isDefaultPort($port, $scheme)) {
+            return "{$host}:{$port}";
+        }
+
+        return $host;
+    }
+
+    /**
+     * @see https://www.rfc-editor.org/rfc/rfc9421.html#section-2.2.4
+     */
+    private function deriveScheme(RequestInterface $request): string
+    {
+        return strtolower($request->getUri()->getScheme());
+    }
+
+    /**
+     * @see https://www.rfc-editor.org/rfc/rfc9421.html#section-2.2.5
+     */
+    private function deriveRequestTarget(RequestInterface $request): string
+    {
+        return $request->getRequestTarget();
+    }
+
+    /**
+     * RFC 9421 Section 2.2.6: The value is the absolute path of the request target.
+     * An empty path is normalized to "/".
+     *
+     * @see https://www.rfc-editor.org/rfc/rfc9421.html#section-2.2.6
+     */
+    private function derivePath(RequestInterface $request): string
+    {
+        $path = $request->getUri()->getPath();
+
+        return $path === '' ? '/' : $path;
+    }
+
+    /**
+     * RFC 9421 Section 2.2.7: The value is the query component, including
+     * the leading "?" character. If the query is absent, the value is "?".
+     *
+     * @see https://www.rfc-editor.org/rfc/rfc9421.html#section-2.2.7
+     */
+    private function deriveQuery(RequestInterface $request): string
+    {
+        $query = $request->getUri()->getQuery();
+
+        return '?' . $query;
+    }
+
+    /**
+     * RFC 9421 Section 2.2.8: Derive a specific query parameter value.
+     * The parameter name is taken from the component identifier's "name" parameter.
+     *
+     * @see https://www.rfc-editor.org/rfc/rfc9421.html#section-2.2.8
+     */
+    private function deriveQueryParam(Item $componentId, RequestInterface $request): string
+    {
+        $paramName = $componentId->parameterByKey('name');
+
+        if ($paramName === null || !is_string($paramName)) {
+            throw new InvalidArgumentException('@query-param requires a "name" parameter');
+        }
+
+        $queryString = $request->getUri()->getQuery();
+
+        // Parse using proper percent-decoded comparison per RFC 9421 §2.2.8:
+        // Decode, then re-encode to canonicalize percent-encoding.
+        foreach (explode('&', $queryString) as $pair) {
+            $parts = explode('=', $pair, 2);
+            $name = urldecode($parts[0]);
+            $value = isset($parts[1]) ? urldecode($parts[1]) : '';
+
+            if ($name === $paramName) {
+                return rawurlencode($value);
+            }
+        }
+
+        throw new InvalidArgumentException("Query parameter \"{$paramName}\" not found in request");
+    }
+
+    /**
+     * RFC 9421 Section 2.2.9: The value is the status code of the response.
+     *
+     * @see https://www.rfc-editor.org/rfc/rfc9421.html#section-2.2.9
+     */
     private function deriveStatus(MessageInterface $message): string
     {
-        $this->ensureMessageIsResponse($message, '@status requires a ResponseInterface');
-        assert($message instanceof ResponseInterface);
+        if (!$message instanceof ResponseInterface) {
+            throw new InvalidArgumentException('@status requires a ResponseInterface');
+        }
+
         return (string) $message->getStatusCode();
     }
 
-    private function deriveQueryParameterComponent(string $component, MessageInterface $message): string
-    {
-        $this->ensureMessageIsRequest($message, 'Query parameters require a RequestInterface');
-        assert($message instanceof RequestInterface);
-
-        $parameterName = $this->extractQueryParameterName($component);
-        $queryString = $message->getUri()->getQuery();
-        $queryParameters = $this->parseQueryString($queryString);
-
-        return $queryParameters[$parameterName] ?? '';
-    }
-
-    private function extractQueryParameterName(string $component): string
-    {
-        $matches = [];
-        $pattern = '/@query-param(?:;name="([^"]+)")?/';
-        $hasMatch = preg_match($pattern, $component, $matches);
-
-        if (!$hasMatch) {
-            throw new \InvalidArgumentException("Invalid query parameter component: {$component}");
-        }
-
-        $parameterName = $matches[1] ?? '';
-        if (empty($parameterName)) {
-            throw new \InvalidArgumentException('Query parameter name is required');
-        }
-
-        return $parameterName;
-    }
-
-    private function parseQueryString(string $queryString): array
-    {
-        $parameters = [];
-        parse_str($queryString, $parameters);
-        return $parameters;
-    }
-
+    /**
+     * RFC 9421 Section 2.1: Derive an HTTP header field value.
+     * Multiple header values are combined with ", ".
+     *
+     * @see https://www.rfc-editor.org/rfc/rfc9421.html#section-2.1
+     */
     private function deriveHeaderComponent(string $headerName, MessageInterface $message): string
     {
         $normalizedHeaderName = strtolower($headerName);
         $headerValues = $message->getHeader($normalizedHeaderName);
 
-        if (empty($headerValues)) {
-            return '';
+        if ($headerValues === []) {
+            throw new InvalidArgumentException("Header \"{$normalizedHeaderName}\" not found in message");
         }
 
-        // RFC 9421: Multiple header values are joined with ", "
         return implode(', ', $headerValues);
     }
 
-    private function ensureMessageIsRequest(MessageInterface $message, string $errorMessage): void
+    private function isDefaultPort(int $port, string $scheme): bool
     {
-        if (!$message instanceof RequestInterface) {
-            throw new \InvalidArgumentException($errorMessage);
-        }
-    }
-
-    private function ensureMessageIsResponse(MessageInterface $message, string $errorMessage): void
-    {
-        if (!$message instanceof ResponseInterface) {
-            throw new \InvalidArgumentException($errorMessage);
-        }
+        return match ($scheme) {
+            'https' => $port === 443,
+            'http' => $port === 80,
+            default => false,
+        };
     }
 }

@@ -2,108 +2,163 @@
 
 declare(strict_types=1);
 
+namespace HttpMessageSignatures\Tests\Unit;
+
+use Bakame\Http\StructuredFields\Item;
 use GuzzleHttp\Psr7\Request;
+use GuzzleHttp\Psr7\Response;
 use HttpMessageSignatures\ComponentDeriver;
+use InvalidArgumentException;
+use PHPUnit\Framework\TestCase;
 
-beforeEach(function () {
-    $this->deriver = new ComponentDeriver();
-});
+final class ComponentDeriverTest extends TestCase
+{
+    private ComponentDeriver $deriver;
 
-test('derives @method component', function () {
-    $request = new Request('POST', 'https://example.com/path');
-    
-    expect($this->deriver->deriveComponent('@method', $request))->toBe('POST');
-});
+    private Request $request;
 
-test('derives @path component', function () {
-    $request = new Request('GET', 'https://example.com/path/to/resource');
-    
-    expect($this->deriver->deriveComponent('@path', $request))->toBe('/path/to/resource');
-});
+    protected function setUp(): void
+    {
+        $this->deriver = new ComponentDeriver();
+        $this->request = new Request(
+            'POST',
+            'https://example.com:443/path?param=value&other=test',
+            [
+                'Host' => 'example.com',
+                'Content-Type' => 'application/json',
+                'Date' => 'Tue, 20 Apr 2021 02:07:55 GMT',
+            ],
+            '{"hello":"world"}',
+        );
+    }
 
-test('derives @query component', function () {
-    $request = new Request('GET', 'https://example.com/path?foo=bar&baz=qux');
-    
-    expect($this->deriver->deriveComponent('@query', $request))->toBe('foo=bar&baz=qux');
-});
+    public function testMethodReturnsUppercaseMethod(): void
+    {
+        $this->assertSame('POST', $this->deriver->deriveComponent(Item::fromString('@method'), $this->request));
+    }
 
-test('derives @authority component', function () {
-    $request = new Request('GET', 'https://example.com:8080/path');
-    
-    expect($this->deriver->deriveComponent('@authority', $request))->toBe('example.com:8080');
-});
+    public function testPathReturnsTheRequestPath(): void
+    {
+        $this->assertSame('/path', $this->deriver->deriveComponent(Item::fromString('@path'), $this->request));
+    }
 
-test('derives @authority component without port for default ports', function () {
-    $request = new Request('GET', 'https://example.com/path');
-    
-    expect($this->deriver->deriveComponent('@authority', $request))->toBe('example.com');
-});
+    public function testPathReturnsSlashForEmptyPath(): void
+    {
+        $request = new Request('GET', 'https://example.com');
+        $this->assertSame('/', $this->deriver->deriveComponent(Item::fromString('@path'), $request));
+    }
 
-test('derives @scheme component', function () {
-    $request = new Request('GET', 'https://example.com/path');
-    
-    expect($this->deriver->deriveComponent('@scheme', $request))->toBe('https');
-});
+    public function testQueryReturnsQuestionMarkPrefixWithQueryString(): void
+    {
+        $this->assertSame('?param=value&other=test', $this->deriver->deriveComponent(
+            Item::fromString('@query'),
+            $this->request,
+        ));
+    }
 
-test('derives @target-uri component', function () {
-    $request = new Request('GET', 'https://example.com/path?foo=bar');
-    
-    expect($this->deriver->deriveComponent('@target-uri', $request))->toBe('https://example.com/path?foo=bar');
-});
+    public function testQueryReturnsQuestionMarkForEmptyQuery(): void
+    {
+        $request = new Request('GET', 'https://example.com/path');
+        $this->assertSame('?', $this->deriver->deriveComponent(Item::fromString('@query'), $request));
+    }
 
-test('derives @request-target component', function () {
-    $request = new Request('GET', 'https://example.com/path?foo=bar');
-    
-    $target = $this->deriver->deriveComponent('@request-target', $request);
-    
-    expect($target)->toBe('/path?foo=bar');
-});
+    public function testAuthorityReturnsLowercaseHost(): void
+    {
+        $this->assertSame('example.com', $this->deriver->deriveComponent(
+            Item::fromString('@authority'),
+            $this->request,
+        ));
+    }
 
-test('derives header component', function () {
-    $request = new Request('GET', 'https://example.com/path', [
-        'Content-Type' => 'application/json',
-    ]);
-    
-    expect($this->deriver->deriveComponent('content-type', $request))->toBe('application/json');
-});
+    public function testAuthorityIncludesNonDefaultPort(): void
+    {
+        $request = new Request('GET', 'https://example.com:8443/path');
+        $this->assertSame('example.com:8443', $this->deriver->deriveComponent(
+            Item::fromString('@authority'),
+            $request,
+        ));
+    }
 
-test('derives header component with multiple values', function () {
-    $request = new Request('GET', 'https://example.com/path', [
-        'Accept' => ['text/html', 'application/json'],
-    ]);
-    
-    expect($this->deriver->deriveComponent('accept', $request))->toBe('text/html, application/json');
-});
+    public function testSchemeReturnsLowercaseScheme(): void
+    {
+        $this->assertSame('https', $this->deriver->deriveComponent(Item::fromString('@scheme'), $this->request));
+    }
 
-test('derives empty string for missing header', function () {
-    $request = new Request('GET', 'https://example.com/path');
-    
-    expect($this->deriver->deriveComponent('x-custom-header', $request))->toBe('');
-});
+    public function testTargetUriReturnsFullUri(): void
+    {
+        $request = new Request('GET', 'https://example.com/path?query=value');
+        $this->assertSame('https://example.com/path?query=value', $this->deriver->deriveComponent(
+            Item::fromString('@target-uri'),
+            $request,
+        ));
+    }
 
-test('derives @query-param component', function () {
-    $request = new Request('GET', 'https://example.com/path?foo=bar&baz=qux');
-    
-    expect($this->deriver->deriveComponent('@query-param;name="foo"', $request))->toBe('bar');
-});
+    public function testRequestTargetReturnsRequestTarget(): void
+    {
+        $this->assertSame('/path?param=value&other=test', $this->deriver->deriveComponent(
+            Item::fromString('@request-target'),
+            $this->request,
+        ));
+    }
 
-test('derives empty string for missing query parameter', function () {
-    $request = new Request('GET', 'https://example.com/path?foo=bar');
-    
-    expect($this->deriver->deriveComponent('@query-param;name="missing"', $request))->toBe('');
-});
+    public function testStatusReturnsResponseStatusCode(): void
+    {
+        $this->assertSame('200', $this->deriver->deriveComponent(Item::fromString('@status'), new Response(200)));
+    }
 
-test('throws exception for invalid derived component', function () {
-    $request = new Request('GET', 'https://example.com/path');
-    
-    expect(fn() => $this->deriver->deriveComponent('@invalid', $request))
-        ->toThrow(InvalidArgumentException::class, 'Unknown derived component');
-});
+    public function testStatusThrowsForNonResponse(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->deriver->deriveComponent(Item::fromString('@status'), $this->request);
+    }
 
-test('throws exception for derived component on non-request', function () {
-    $response = new \GuzzleHttp\Psr7\Response(200);
-    
-    expect(fn() => $this->deriver->deriveComponent('@method', $response))
-        ->toThrow(InvalidArgumentException::class, 'Derived components require a RequestInterface');
-});
+    public function testQueryParamExtractsNamedQueryParameter(): void
+    {
+        $component = Item::fromHttpValue('"@query-param";name="param"');
+        $this->assertSame('value', $this->deriver->deriveComponent($component, $this->request));
+    }
 
+    public function testQueryParamThrowsWhenParameterIsMissing(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $component = Item::fromHttpValue('"@query-param";name="nonexistent"');
+        $this->deriver->deriveComponent($component, $this->request);
+    }
+
+    public function testHeaderComponentReturnsHeaderValue(): void
+    {
+        $this->assertSame('application/json', $this->deriver->deriveComponent(
+            Item::fromString('content-type'),
+            $this->request,
+        ));
+    }
+
+    public function testHeaderComponentThrowsWhenHeaderNotFound(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->deriver->deriveComponent(Item::fromString('x-nonexistent'), $this->request);
+    }
+
+    public function testHeaderComponentCombinesMultipleValuesWithComma(): void
+    {
+        $request = new Request('GET', 'https://example.com', ['Accept' => ['text/html', 'application/json']]);
+        $this->assertSame('text/html, application/json', $this->deriver->deriveComponent(
+            Item::fromString('accept'),
+            $request,
+        ));
+    }
+
+    public function testDerivedComponentsWorkForResponsesWithOriginalRequest(): void
+    {
+        $request = new Request('GET', 'https://example.com/path');
+        $response = new Response(200);
+
+        $this->assertSame('GET', $this->deriver->deriveComponent(Item::fromString('@method'), $response, $request));
+    }
+
+    public function testDerivedComponentsThrowForResponseWithoutOriginalRequest(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->deriver->deriveComponent(Item::fromString('@method'), new Response(200));
+    }
+}

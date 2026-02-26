@@ -2,77 +2,76 @@
 
 declare(strict_types=1);
 
+namespace HttpMessageSignatures\Tests\Unit\Algorithm;
+
 use HttpMessageSignatures\Algorithm\HmacSha256;
 use HttpMessageSignatures\Exception\InvalidKeyException;
+use PHPUnit\Framework\TestCase;
 
-test('can sign data with HMAC-SHA256', function () {
-    $algorithm = new HmacSha256('secret-key');
-    $data = 'test data';
-    
-    $signature = $algorithm->sign($data);
-    
-    expect($signature)
-        ->toBeString()
-        ->not->toBeEmpty()
-        ->and(base64_decode($signature, true))->not->toBeFalse();
-});
+final class HmacSha256Test extends TestCase
+{
+    public function testSignReturnsRawBinaryBytes(): void
+    {
+        $algorithm = new HmacSha256('test-secret-key');
+        $signature = $algorithm->sign('test data');
 
-test('can verify valid signature', function () {
-    $algorithm = new HmacSha256('secret-key');
-    $data = 'test data';
-    
-    $signature = $algorithm->sign($data);
-    
-    expect($algorithm->verify($data, $signature))->toBeTrue();
-});
+        $this->assertIsString($signature);
+        $this->assertSame(32, strlen($signature));
+    }
 
-test('rejects invalid signature', function () {
-    $algorithm = new HmacSha256('secret-key');
-    $data = 'test data';
-    
-    $invalidSignature = base64_encode('invalid signature');
-    
-    expect($algorithm->verify($data, $invalidSignature))->toBeFalse();
-});
+    public function testSignProducesConsistentOutput(): void
+    {
+        $algorithm = new HmacSha256('test-secret-key');
+        $sig1 = $algorithm->sign('test data');
+        $sig2 = $algorithm->sign('test data');
 
-test('rejects signature for different data', function () {
-    $algorithm = new HmacSha256('secret-key');
-    $data1 = 'test data';
-    $data2 = 'different data';
-    
-    $signature = $algorithm->sign($data1);
-    
-    expect($algorithm->verify($data2, $signature))->toBeFalse();
-});
+        $this->assertSame($sig1, $sig2);
+    }
 
-test('rejects signature with different key', function () {
-    $algorithm1 = new HmacSha256('secret-key-1');
-    $algorithm2 = new HmacSha256('secret-key-2');
-    $data = 'test data';
-    
-    $signature = $algorithm1->sign($data);
-    
-    expect($algorithm2->verify($data, $signature))->toBeFalse();
-});
+    public function testVerifyAcceptsRawBytesAndReturnsTrueForValidSignature(): void
+    {
+        $algorithm = new HmacSha256('test-secret-key');
+        $signature = $algorithm->sign('test data');
 
-test('throws exception for empty secret key', function () {
-    expect(fn() => new HmacSha256(''))
-        ->toThrow(InvalidKeyException::class, 'HMAC secret key cannot be empty');
-});
+        $this->assertTrue($algorithm->verify('test data', $signature));
+    }
 
-test('returns correct algorithm ID', function () {
-    $algorithm = new HmacSha256('secret-key');
-    
-    expect($algorithm->getAlgorithmId())->toBe('hmac-sha256');
-});
+    public function testVerifyReturnsFalseForInvalidSignature(): void
+    {
+        $algorithm = new HmacSha256('test-secret-key');
+        $signature = $algorithm->sign('test data');
 
-test('produces deterministic signatures', function () {
-    $algorithm = new HmacSha256('secret-key');
-    $data = 'test data';
-    
-    $signature1 = $algorithm->sign($data);
-    $signature2 = $algorithm->sign($data);
-    
-    expect($signature1)->toBe($signature2);
-});
+        $this->assertFalse($algorithm->verify('different data', $signature));
+    }
 
+    public function testVerifyReturnsFalseForTamperedSignature(): void
+    {
+        $algorithm = new HmacSha256('test-secret-key');
+        $signature = $algorithm->sign('test data');
+
+        $this->assertFalse($algorithm->verify('test data', $signature . 'x'));
+    }
+
+    public function testDifferentKeysProduceDifferentSignatures(): void
+    {
+        $alg1 = new HmacSha256('key-one');
+        $alg2 = new HmacSha256('key-two');
+
+        $sig1 = $alg1->sign('same data');
+        $sig2 = $alg2->sign('same data');
+
+        $this->assertNotSame($sig1, $sig2);
+    }
+
+    public function testGetAlgorithmIdReturnsHmacSha256(): void
+    {
+        $algorithm = new HmacSha256('key');
+        $this->assertSame('hmac-sha256', $algorithm->getAlgorithmId());
+    }
+
+    public function testThrowsOnEmptySecretKey(): void
+    {
+        $this->expectException(InvalidKeyException::class);
+        new HmacSha256('');
+    }
+}

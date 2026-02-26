@@ -1,0 +1,31 @@
+php-version = "8.1.0"
+
+[source]
+paths = ["src", "tests"]
+includes = ["vendor"]
+excludes = [
+    "./vendor/composer",
+    "**/.phpunit.cache",
+]
+
+[formatter]
+print-width = 120
+tab-width = 4
+use-tabs = false
+null-type-hint = "question"
+empty-line-after-opening-tag = false
+
+[linter]
+integrations = ["php-unit"]
+
+[linter.rules]
+strict-types = { enabled = true }
+no-redundant-use = { enabled = true }
+assertion-style = { style = "this" }
+literal-named-argument = { enabled = false }
+no-isset = { enabled = false }
+no-else-clause = { enabled = false }
+inline-variable-return = { enabled = false }
+readable-literal = { enabled = false }
+cyclomatic-complexity = { enabled = false }
+too-many-methods = { enabled = false }

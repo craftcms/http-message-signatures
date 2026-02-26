@@ -7,7 +7,9 @@ namespace HttpMessageSignatures\Algorithm;
 use HttpMessageSignatures\Exception\InvalidKeyException;
 
 /**
- * HMAC-SHA256 signature algorithm.
+ * HMAC-SHA256 signature algorithm (hmac-sha256).
+ *
+ * @see https://www.rfc-editor.org/rfc/rfc9421.html#name-hmac-using-sha-256
  */
 class HmacSha256 implements AlgorithmInterface
 {
@@ -15,7 +17,7 @@ class HmacSha256 implements AlgorithmInterface
 
     public function __construct(string $secretKey)
     {
-        if (empty($secretKey)) {
+        if ($secretKey === '') {
             throw new InvalidKeyException('HMAC secret key cannot be empty');
         }
 
@@ -24,14 +26,14 @@ class HmacSha256 implements AlgorithmInterface
 
     public function sign(string $data): string
     {
-        $signature = hash_hmac('sha256', $data, $this->secretKey, true);
-        return base64_encode($signature);
+        return hash_hmac('sha256', $data, $this->secretKey, binary: true);
     }
 
     public function verify(string $data, string $signature): bool
     {
-        $expectedSignature = $this->sign($data);
-        return hash_equals($expectedSignature, $signature);
+        $expected = $this->sign($data);
+
+        return hash_equals($expected, $signature);
     }
 
     public function getAlgorithmId(): string
@@ -39,4 +41,3 @@ class HmacSha256 implements AlgorithmInterface
         return 'hmac-sha256';
     }
 }
-

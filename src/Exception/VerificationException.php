@@ -7,7 +7,4 @@ namespace HttpMessageSignatures\Exception;
 /**
  * Exception thrown when signature verification fails.
  */
-class VerificationException extends \RuntimeException implements ExceptionInterface
-{
-}
-
+class VerificationException extends \RuntimeException implements ExceptionInterface {}
