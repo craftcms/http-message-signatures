@@ -1,0 +1,142 @@
+<?php
+
+declare(strict_types=1);
+
+namespace HttpMessageSignatures\Tests\Unit\Url;
+
+use Http\Factory\Guzzle\RequestFactory;
+use HttpMessageSignatures\Algorithm\HmacSha256;
+use HttpMessageSignatures\Exception\VerificationException;
+use HttpMessageSignatures\Url\UrlSigner;
+use HttpMessageSignatures\Url\UrlSigningConfig;
+use HttpMessageSignatures\Url\UrlVerifier;
+use PHPUnit\Framework\TestCase;
+
+final class UrlVerifierTest extends TestCase
+{
+    private UrlSigner $signer;
+
+    private UrlVerifier $verifier;
+
+    protected function setUp(): void
+    {
+        $config = new UrlSigningConfig(created: 1000000);
+        $algorithm = new HmacSha256('test-secret-key');
+        $requestFactory = new RequestFactory();
+
+        $this->signer = new UrlSigner($algorithm, $requestFactory, $config);
+        $this->verifier = new UrlVerifier($algorithm, $requestFactory, $config);
+    }
+
+    public function test_verify_valid_signed_url(): void
+    {
+        $signed = $this->signer->sign('https://example.com/path');
+
+        $this->assertTrue($this->verifier->verify($signed));
+    }
+
+    public function test_verify_valid_signed_url_with_query_params(): void
+    {
+        $signed = $this->signer->sign('https://example.com/path?foo=bar&baz=qux');
+
+        $this->assertTrue($this->verifier->verify($signed));
+    }
+
+    public function test_verify_throws_when_signature_missing(): void
+    {
+        $this->expectException(VerificationException::class);
+        $this->expectExceptionMessage('Signature parameter');
+
+        $this->verifier->verify('https://example.com/path');
+    }
+
+    public function test_verify_throws_when_signature_input_missing(): void
+    {
+        $this->expectException(VerificationException::class);
+        $this->expectExceptionMessage('Signature input parameter');
+
+        $this->verifier->verify('https://example.com/path?signature=abc123');
+    }
+
+    public function test_verify_throws_on_tampered_path(): void
+    {
+        $signed = $this->signer->sign('https://example.com/original');
+        $tampered = str_replace('/original', '/tampered', $signed);
+
+        $this->expectException(VerificationException::class);
+        $this->expectExceptionMessage('verification failed');
+
+        $this->verifier->verify($tampered);
+    }
+
+    public function test_verify_throws_on_tampered_query(): void
+    {
+        $signed = $this->signer->sign('https://example.com/path?token=valid');
+        $tampered = str_replace('token=valid', 'token=evil', $signed);
+
+        $this->expectException(VerificationException::class);
+        $this->expectExceptionMessage('verification failed');
+
+        $this->verifier->verify($tampered);
+    }
+
+    public function test_verify_throws_on_tampered_host(): void
+    {
+        $signed = $this->signer->sign('https://example.com/path');
+        $tampered = str_replace('example.com', 'evil.com', $signed);
+
+        $this->expectException(VerificationException::class);
+        $this->expectExceptionMessage('verification failed');
+
+        $this->verifier->verify($tampered);
+    }
+
+    public function test_verify_throws_on_wrong_key(): void
+    {
+        $signed = $this->signer->sign('https://example.com/path');
+
+        $wrongVerifier = new UrlVerifier(
+            new HmacSha256('wrong-secret-key'),
+            new RequestFactory(),
+            new UrlSigningConfig(created: 1000000),
+        );
+
+        $this->expectException(VerificationException::class);
+        $this->expectExceptionMessage('verification failed');
+
+        $wrongVerifier->verify($signed);
+    }
+
+    public function test_verify_throws_on_expired_signature(): void
+    {
+        $config = new UrlSigningConfig(created: 1000000, expiresAfter: 1); // 1 second — already expired relative to timestamp 1000000
+
+        $algorithm = new HmacSha256('test-secret-key');
+        $requestFactory = new RequestFactory();
+
+        $signer = new UrlSigner($algorithm, $requestFactory, $config);
+        $verifier = new UrlVerifier($algorithm, $requestFactory, $config);
+
+        $signed = $signer->sign('https://example.com/path');
+
+        $this->expectException(VerificationException::class);
+        $this->expectExceptionMessage('expired');
+
+        $verifier->verify($signed);
+    }
+
+    public function test_verify_with_custom_param_names(): void
+    {
+        $config = new UrlSigningConfig(signatureParam: 'sig', signatureInputParam: 'sig-input', created: 1000000);
+
+        $algorithm = new HmacSha256('test-secret-key');
+        $requestFactory = new RequestFactory();
+
+        $signer = new UrlSigner($algorithm, $requestFactory, $config);
+        $verifier = new UrlVerifier($algorithm, $requestFactory, $config);
+
+        $signed = $signer->sign('https://example.com/path');
+
+        $this->assertTrue($verifier->verify($signed));
+    }
+}
