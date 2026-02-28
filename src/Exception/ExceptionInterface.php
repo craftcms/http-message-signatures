@@ -7,7 +7,4 @@ namespace HttpMessageSignatures\Exception;
 /**
  * Base exception interface for HTTP Message Signatures.
  */
-interface ExceptionInterface extends \Throwable
-{
-}
-
+interface ExceptionInterface extends \Throwable {}

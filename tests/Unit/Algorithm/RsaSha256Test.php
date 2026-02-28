@@ -2,81 +2,78 @@
 
 declare(strict_types=1);
 
+namespace HttpMessageSignatures\Tests\Unit\Algorithm;
+
 use HttpMessageSignatures\Algorithm\RsaSha256;
 use HttpMessageSignatures\Exception\InvalidKeyException;
+use PHPUnit\Framework\TestCase;
 
-beforeEach(function () {
-    // Generate test RSA key pair
-    $config = [
-        'digest_alg' => 'sha256',
-        'private_key_bits' => 2048,
-        'private_key_type' => OPENSSL_KEYTYPE_RSA,
-    ];
-    
-    $resource = openssl_pkey_new($config);
-    openssl_pkey_export($resource, $this->privateKey);
-    
-    $details = openssl_pkey_get_details($resource);
-    $this->publicKey = $details['key'];
-});
+final class RsaSha256Test extends TestCase
+{
+    private string $privateKeyPem;
 
-test('can sign data with RSA-SHA256', function () {
-    $algorithm = new RsaSha256($this->privateKey, $this->publicKey);
-    $data = 'test data';
-    
-    $signature = $algorithm->sign($data);
-    
-    expect($signature)
-        ->toBeString()
-        ->not->toBeEmpty()
-        ->and(base64_decode($signature, true))->not->toBeFalse();
-});
+    private string $publicKeyPem;
 
-test('can verify valid signature', function () {
-    $algorithm = new RsaSha256($this->privateKey, $this->publicKey);
-    $data = 'test data';
-    
-    $signature = $algorithm->sign($data);
-    
-    expect($algorithm->verify($data, $signature))->toBeTrue();
-});
+    protected function setUp(): void
+    {
+        $config = [
+            'private_key_bits' => 2048,
+            'private_key_type' => OPENSSL_KEYTYPE_RSA,
+        ];
 
-test('rejects invalid signature', function () {
-    $algorithm = new RsaSha256($this->privateKey, $this->publicKey);
-    $data = 'test data';
-    
-    $invalidSignature = base64_encode('invalid signature');
-    
-    expect($algorithm->verify($data, $invalidSignature))->toBeFalse();
-});
+        $resource = openssl_pkey_new($config);
+        self::assertNotFalse($resource);
+        openssl_pkey_export($resource, $privateKeyPem);
+        $details = openssl_pkey_get_details($resource);
+        self::assertIsArray($details);
 
-test('rejects signature for different data', function () {
-    $algorithm = new RsaSha256($this->privateKey, $this->publicKey);
-    $data1 = 'test data';
-    $data2 = 'different data';
-    
-    $signature = $algorithm->sign($data1);
-    
-    expect($algorithm->verify($data2, $signature))->toBeFalse();
-});
+        $this->privateKeyPem = $privateKeyPem;
+        $this->publicKeyPem = $details['key'];
+    }
 
-test('can extract public key from private key', function () {
-    $algorithm = new RsaSha256($this->privateKey); // No public key provided
-    $data = 'test data';
-    
-    $signature = $algorithm->sign($data);
-    
-    expect($algorithm->verify($data, $signature))->toBeTrue();
-});
+    public function testSignReturnsRawBinaryBytes(): void
+    {
+        $algorithm = new RsaSha256($this->privateKeyPem, $this->publicKeyPem);
+        $signature = $algorithm->sign('test data');
 
-test('returns correct algorithm ID', function () {
-    $algorithm = new RsaSha256($this->privateKey, $this->publicKey);
-    
-    expect($algorithm->getAlgorithmId())->toBe('rsa-sha256');
-});
+        $this->assertIsString($signature);
+        $this->assertGreaterThan(0, strlen($signature));
+        $this->assertSame(256, strlen($signature));
+    }
 
-test('throws exception for invalid private key', function () {
-    expect(fn() => new RsaSha256('invalid-key'))
-        ->toThrow(InvalidKeyException::class);
-});
+    public function testVerifyAcceptsRawBytesAndReturnsTrueForValidSignature(): void
+    {
+        $algorithm = new RsaSha256($this->privateKeyPem, $this->publicKeyPem);
+        $signature = $algorithm->sign('test data');
 
+        $this->assertTrue($algorithm->verify('test data', $signature));
+    }
+
+    public function testVerifyReturnsFalseForInvalidSignature(): void
+    {
+        $algorithm = new RsaSha256($this->privateKeyPem, $this->publicKeyPem);
+        $signature = $algorithm->sign('test data');
+
+        $this->assertFalse($algorithm->verify('different data', $signature));
+    }
+
+    public function testCanDerivePublicKeyFromPrivateKey(): void
+    {
+        $algorithm = new RsaSha256($this->privateKeyPem);
+        $signature = $algorithm->sign('test data');
+
+        $this->assertTrue($algorithm->verify('test data', $signature));
+    }
+
+    public function testValidatesKeysDuringConstruction(): void
+    {
+        $this->expectException(InvalidKeyException::class);
+        new RsaSha256('not-a-valid-key');
+    }
+
+    public function testGetAlgorithmIdReturnsRsaV15Sha256(): void
+    {
+        $algorithm = new RsaSha256($this->privateKeyPem);
+        $this->assertSame('rsa-v1_5-sha256', $algorithm->getAlgorithmId());
+    }
+}

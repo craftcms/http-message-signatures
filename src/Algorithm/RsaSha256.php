@@ -8,84 +8,55 @@ use HttpMessageSignatures\Exception\InvalidKeyException;
 use OpenSSLAsymmetricKey;
 
 /**
- * RSA-SHA256 signature algorithm.
+ * RSASSA-PKCS1-v1_5 using SHA-256 signature algorithm (rsa-v1_5-sha256).
+ *
+ * @see https://www.rfc-editor.org/rfc/rfc9421.html#name-rsassa-pkcs1-v1_5-using-sha
+ * @see https://www.iana.org/assignments/http-message-signatures/http-message-signatures.xhtml
  */
 class RsaSha256 implements AlgorithmInterface
 {
-    private OpenSSLAsymmetricKey|string $privateKey;
-    private OpenSSLAsymmetricKey|string|null $publicKey;
+    private OpenSSLAsymmetricKey $privateKey;
 
-    public function __construct(
-        OpenSSLAsymmetricKey|string $privateKey,
-        OpenSSLAsymmetricKey|string|null $publicKey = null
-    ) {
-        $this->privateKey = $privateKey;
-        $this->publicKey = $publicKey;
+    private ?OpenSSLAsymmetricKey $publicKey;
+
+    public function __construct(OpenSSLAsymmetricKey|string $privateKey, OpenSSLAsymmetricKey|string $publicKey = null)
+    {
+        $this->privateKey = $this->resolvePrivateKey($privateKey);
+        $this->publicKey = $publicKey !== null ? $this->resolvePublicKey($publicKey) : null;
     }
 
     public function sign(string $data): string
     {
-        $privateKey = $this->getPrivateKeyResource();
         $signature = '';
-        $success = openssl_sign($data, $signature, $privateKey, OPENSSL_ALGO_SHA256);
+        $success = openssl_sign($data, $signature, $this->privateKey, OPENSSL_ALGO_SHA256);
 
         if (!$success) {
             throw new InvalidKeyException('Failed to sign data with RSA key: ' . openssl_error_string());
         }
 
-        return base64_encode($signature);
+        return $signature;
     }
 
     public function verify(string $data, string $signature): bool
     {
-        $publicKey = $this->getPublicKeyResource();
-        $decodedSignature = base64_decode($signature, true);
+        $publicKey = $this->getPublicKey();
+        $result = openssl_verify($data, $signature, $publicKey, OPENSSL_ALGO_SHA256);
 
-        if ($decodedSignature === false) {
-            return false;
-        }
-
-        $result = openssl_verify($data, $decodedSignature, $publicKey, OPENSSL_ALGO_SHA256);
         return $result === 1;
     }
 
     public function getAlgorithmId(): string
     {
-        return 'rsa-sha256';
+        return 'rsa-v1_5-sha256';
     }
 
-    private function getPrivateKeyResource(): OpenSSLAsymmetricKey|string
-    {
-        if (is_resource($this->privateKey) || $this->privateKey instanceof OpenSSLAsymmetricKey) {
-            return $this->privateKey;
-        }
-
-        $resource = openssl_pkey_get_private($this->privateKey);
-        if ($resource === false) {
-            throw new InvalidKeyException('Invalid private key: ' . openssl_error_string());
-        }
-
-        return $resource;
-    }
-
-    private function getPublicKeyResource(): OpenSSLAsymmetricKey|string
+    private function getPublicKey(): OpenSSLAsymmetricKey
     {
         if ($this->publicKey !== null) {
-            if (is_resource($this->publicKey) || $this->publicKey instanceof OpenSSLAsymmetricKey) {
-                return $this->publicKey;
-            }
-
-            $resource = openssl_pkey_get_public($this->publicKey);
-            if ($resource === false) {
-                throw new InvalidKeyException('Invalid public key: ' . openssl_error_string());
-            }
-
-            return $resource;
+            return $this->publicKey;
         }
 
-        // Try to extract public key from private key
-        $privateKey = $this->getPrivateKeyResource();
-        $details = openssl_pkey_get_details($privateKey);
+        $details = openssl_pkey_get_details($this->privateKey);
 
         if ($details === false || !isset($details['key'])) {
             throw new InvalidKeyException('Could not extract public key from private key');
@@ -98,5 +69,32 @@ class RsaSha256 implements AlgorithmInterface
 
         return $publicKey;
     }
-}
 
+    private function resolvePrivateKey(OpenSSLAsymmetricKey|string $key): OpenSSLAsymmetricKey
+    {
+        if ($key instanceof OpenSSLAsymmetricKey) {
+            return $key;
+        }
+
+        $resource = openssl_pkey_get_private($key);
+        if ($resource === false) {
+            throw new InvalidKeyException('Invalid private key: ' . openssl_error_string());
+        }
+
+        return $resource;
+    }
+
+    private function resolvePublicKey(OpenSSLAsymmetricKey|string $key): OpenSSLAsymmetricKey
+    {
+        if ($key instanceof OpenSSLAsymmetricKey) {
+            return $key;
+        }
+
+        $resource = openssl_pkey_get_public($key);
+        if ($resource === false) {
+            throw new InvalidKeyException('Invalid public key: ' . openssl_error_string());
+        }
+
+        return $resource;
+    }
+}
