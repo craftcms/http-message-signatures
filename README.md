@@ -256,18 +256,17 @@ This package is fully PSR-7 compliant:
 
 ```bash
 composer test
-# or
-./vendor/bin/pest
 ```
 
 ### Code Style
 
-This project uses [Laravel Pint](https://laravel.com/docs/pint) for code style formatting:
+This project uses [Mago](https://github.com/carthage-software/mago) for formatting and linting:
 
 ```bash
-composer pint
-# or
-./vendor/bin/pint
+composer fmt
+composer lint
+# or (auto-fix)
+composer lint:fix
 ```
 
 ### Static Analysis
@@ -283,4 +282,3 @@ composer phpstan
 ## License
 
 MIT
-

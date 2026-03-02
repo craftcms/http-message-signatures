@@ -58,10 +58,9 @@ final class UrlSigner
         }
 
         // Strip any existing signature params
-        $cleanUrl = Modifier::wrap($uriString)->removeQueryPairs(
-            $this->config->signatureParam,
-            $this->config->signatureInputParam,
-        )->toString();
+        $cleanUrl = Modifier::wrap($uriString)
+            ->removeQueryPairs($this->config->signatureParam, $this->config->signatureInputParam)
+            ->toString();
 
         // Create request with resolved method and clean URL
         $request = $this->requestFactory->createRequest($method, $cleanUrl);
@@ -82,10 +81,12 @@ final class UrlSigner
         $rawSignature = $this->algorithm->sign($signatureBaseString);
 
         // Append signature-input and signature query params
-        return Modifier::wrap($cleanUrl)->appendQueryParameters([
-            $this->config->signatureInputParam => $signatureInput->toHttpValue(),
-            $this->config->signatureParam => self::base64urlEncode($rawSignature),
-        ])->toString();
+        return Modifier::wrap($cleanUrl)
+            ->appendQueryParameters([
+                $this->config->signatureInputParam => $signatureInput->toHttpValue(),
+                $this->config->signatureParam => self::base64urlEncode($rawSignature),
+            ])
+            ->toString();
     }
 
     /**
