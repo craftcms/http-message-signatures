@@ -77,10 +77,9 @@ final class UrlVerifier
         $this->ensureNotExpired($signatureInput);
 
         // Strip signature params to get the clean URL
-        $cleanUrl = Modifier::wrap($uriString)->removeQueryPairs(
-            $this->config->signatureParam,
-            $this->config->signatureInputParam,
-        )->toString();
+        $cleanUrl = Modifier::wrap($uriString)
+            ->removeQueryPairs($this->config->signatureParam, $this->config->signatureInputParam)
+            ->toString();
 
         // Create request with resolved method and clean URL
         $request = $this->requestFactory->createRequest($method, $cleanUrl);
