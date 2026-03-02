@@ -10,8 +10,9 @@ use HttpMessageSignatures\Algorithm\AlgorithmInterface;
 use HttpMessageSignatures\Exception\SignatureException;
 use HttpMessageSignatures\SignatureBase;
 use HttpMessageSignatures\Signer;
+use League\Uri\Modifier;
 use Psr\Http\Message\RequestFactoryInterface;
-use Uri\Rfc3986\Uri;
+use Psr\Http\Message\RequestInterface;
 
 final class UrlSigner
 {
@@ -29,27 +30,41 @@ final class UrlSigner
     /**
      * Sign a URL and return the URL with signature query parameters appended.
      *
-     * @param  string|Uri  $url  The URL to sign
+     * Accepts a plain URL string or a PSR-7 RequestInterface.
+     * When a RequestInterface is passed, its method is preserved — this allows
+     * signing URLs for non-GET methods (e.g. POST form actions) when @method
+     * is included in the components list.
+     *
+     * When a string is passed, a synthetic GET request is created internally.
+     *
+     * @param  string|RequestInterface  $url  The URL (or request) to sign
      * @return string The signed URL with signature and signature-input query parameters
      *
      * @throws SignatureException
      */
-    public function sign(string|Uri $url): string
+    public function sign(string|RequestInterface $url): string
     {
-        $uri = $url instanceof Uri ? $url : new Uri((string) $url);
-
         if ($this->config->components === []) {
             throw new SignatureException('At least one component must be specified');
         }
 
+        // Resolve method and URI string from input
+        if ($url instanceof RequestInterface) {
+            $method = $url->getMethod();
+            $uriString = (string) $url->getUri();
+        } else {
+            $method = 'GET';
+            $uriString = $url;
+        }
+
         // Strip any existing signature params
-        $cleanUri = UrlQueryHelper::stripParams($uri, [
+        $cleanUrl = Modifier::wrap($uriString)->removeQueryPairs(
             $this->config->signatureParam,
             $this->config->signatureInputParam,
-        ]);
+        )->toString();
 
-        // Create synthetic GET request from the clean URL
-        $request = $this->requestFactory->createRequest('GET', $cleanUri->toString());
+        // Create request with resolved method and clean URL
+        $request = $this->requestFactory->createRequest($method, $cleanUrl);
 
         // Parse component identifiers
         $componentItems = array_map(Signer::parseComponentIdentifier(...), $this->config->components);
@@ -67,24 +82,26 @@ final class UrlSigner
         $rawSignature = $this->algorithm->sign($signatureBaseString);
 
         // Append signature-input and signature query params
-        return UrlQueryHelper::appendParams($cleanUri, [
+        return Modifier::wrap($cleanUrl)->appendQueryParameters([
             $this->config->signatureInputParam => $signatureInput->toHttpValue(),
-            $this->config->signatureParam => UrlQueryHelper::base64urlEncode($rawSignature),
-        ]);
+            $this->config->signatureParam => self::base64urlEncode($rawSignature),
+        ])->toString();
     }
 
+    /**
+     * @see Signer::buildSignatureParameters() for a similar implementation — consider
+     *      extracting a shared builder if more signing surfaces are added.
+     */
     private function buildSignatureParameters(): Parameters
     {
         $params = [];
 
-        $created = $this->config->created ?? time();
-
-        if ($created !== false) {
-            $params['created'] = (int) $created;
+        if ($this->config->created !== null) {
+            $params['created'] = $this->config->created;
         }
 
-        if ($this->config->expiresAfter !== null && $created !== false) {
-            $params['expires'] = (int) $created + $this->config->expiresAfter;
+        if ($this->config->expiresAfter !== null && $this->config->created !== null) {
+            $params['expires'] = $this->config->created + $this->config->expiresAfter;
         }
 
         if ($this->config->nonce !== null) {
@@ -106,5 +123,13 @@ final class UrlSigner
         }
 
         return Parameters::fromAssociative($params);
+    }
+
+    /**
+     * Base64url encode (RFC 4648 Section 5), no padding.
+     */
+    private static function base64urlEncode(string $data): string
+    {
+        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
     }
 }

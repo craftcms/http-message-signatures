@@ -8,8 +8,10 @@ use Bakame\Http\StructuredFields\InnerList;
 use HttpMessageSignatures\Algorithm\AlgorithmInterface;
 use HttpMessageSignatures\Exception\VerificationException;
 use HttpMessageSignatures\SignatureBase;
+use League\Uri\Components\Query;
+use League\Uri\Modifier;
 use Psr\Http\Message\RequestFactoryInterface;
-use Uri\Rfc3986\Uri;
+use Psr\Http\Message\RequestInterface;
 
 final class UrlVerifier
 {
@@ -27,26 +29,41 @@ final class UrlVerifier
     /**
      * Verify a signed URL.
      *
-     * @param  string|Uri  $url  The signed URL to verify
+     * Accepts a plain URL string or a PSR-7 RequestInterface.
+     * When a RequestInterface is passed, its method is preserved for verification —
+     * this is necessary when the signature covers @method.
+     *
+     * When a string is passed, a synthetic GET request is assumed.
+     *
+     * @param  string|RequestInterface  $url  The signed URL (or request) to verify
      * @return bool True if the signature is valid
      *
      * @throws VerificationException
      */
-    public function verify(string|Uri $url): bool
+    public function verify(string|RequestInterface $url): bool
     {
-        $uri = $url instanceof Uri ? $url : new Uri((string) $url);
+        // Resolve method and URI string from input
+        if ($url instanceof RequestInterface) {
+            $method = $url->getMethod();
+            $uriString = (string) $url->getUri();
+        } else {
+            $method = 'GET';
+            $uriString = $url;
+        }
+
+        $query = Query::fromUri($uriString);
 
         // Extract the signature
-        $encodedSignature = UrlQueryHelper::extractParam($uri, $this->config->signatureParam);
+        $encodedSignature = $query->parameter($this->config->signatureParam);
 
         if ($encodedSignature === null) {
             throw new VerificationException("Signature parameter '{$this->config->signatureParam}' not found in URL");
         }
 
-        $rawSignature = UrlQueryHelper::base64urlDecode($encodedSignature);
+        $rawSignature = self::base64urlDecode((string) $encodedSignature);
 
         // Extract and parse signature-input
-        $signatureInputValue = UrlQueryHelper::extractParam($uri, $this->config->signatureInputParam);
+        $signatureInputValue = $query->parameter($this->config->signatureInputParam);
 
         if ($signatureInputValue === null) {
             throw new VerificationException(
@@ -54,19 +71,19 @@ final class UrlVerifier
             );
         }
 
-        $signatureInput = $this->parseSignatureInput($signatureInputValue);
+        $signatureInput = $this->parseSignatureInput((string) $signatureInputValue);
 
         // Check expiration
         $this->ensureNotExpired($signatureInput);
 
         // Strip signature params to get the clean URL
-        $cleanUri = UrlQueryHelper::stripParams($uri, [
+        $cleanUrl = Modifier::wrap($uriString)->removeQueryPairs(
             $this->config->signatureParam,
             $this->config->signatureInputParam,
-        ]);
+        )->toString();
 
-        // Create synthetic GET request from the clean URL
-        $request = $this->requestFactory->createRequest('GET', $cleanUri->toString());
+        // Create request with resolved method and clean URL
+        $request = $this->requestFactory->createRequest($method, $cleanUrl);
 
         // Rebuild signature base string
         $signatureBaseString = $this->signatureBase->build($signatureInput, $request);
@@ -107,5 +124,21 @@ final class UrlVerifier
         if ($expires < time()) {
             throw new VerificationException('Signature has expired');
         }
+    }
+
+    /**
+     * Base64url decode (RFC 4648 Section 5).
+     *
+     * @throws VerificationException
+     */
+    private static function base64urlDecode(string $data): string
+    {
+        $decoded = base64_decode(strtr($data, '-_', '+/'), true);
+
+        if ($decoded === false) {
+            throw new VerificationException('Invalid base64url data');
+        }
+
+        return $decoded;
     }
 }

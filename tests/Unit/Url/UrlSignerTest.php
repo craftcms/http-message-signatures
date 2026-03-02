@@ -10,15 +10,17 @@ use HttpMessageSignatures\Exception\SignatureException;
 use HttpMessageSignatures\Url\UrlSigner;
 use HttpMessageSignatures\Url\UrlSigningConfig;
 use PHPUnit\Framework\TestCase;
-use Uri\Rfc3986\Uri;
 
 final class UrlSignerTest extends TestCase
 {
     private UrlSigner $signer;
 
+    private RequestFactory $requestFactory;
+
     protected function setUp(): void
     {
-        $this->signer = new UrlSigner(new HmacSha256('test-secret-key'), new RequestFactory());
+        $this->requestFactory = new RequestFactory();
+        $this->signer = new UrlSigner(new HmacSha256('test-secret-key'), $this->requestFactory);
     }
 
     public function test_sign_appends_signature_params(): void
@@ -108,14 +110,6 @@ final class UrlSignerTest extends TestCase
         $signer->sign('https://example.com/path');
     }
 
-    public function test_sign_accepts_uri_object(): void
-    {
-        $uri = new Uri('https://example.com/path');
-        $signed = $this->signer->sign($uri);
-
-        $this->assertStringContainsString('signature=', $signed);
-    }
-
     public function test_sign_produces_deterministic_output(): void
     {
         $config = new UrlSigningConfig(created: 1000000);
@@ -129,11 +123,11 @@ final class UrlSignerTest extends TestCase
         $this->assertSame($signed1, $signed2);
     }
 
-    public function test_sign_with_created_false_omits_created(): void
+    public function test_sign_with_created_null_omits_created(): void
     {
-        $config = new UrlSigningConfig(created: false);
+        $config = new UrlSigningConfig(created: null);
 
-        $signer = new UrlSigner(new HmacSha256('test-secret-key'), new RequestFactory(), $config);
+        $signer = new UrlSigner(new HmacSha256('test-secret-key'), $this->requestFactory, $config);
 
         $signed = $signer->sign('https://example.com/path');
         $params = $this->extractQueryParams($signed);
@@ -142,32 +136,66 @@ final class UrlSignerTest extends TestCase
         $this->assertStringNotContainsString('created=', $params['signature-input']);
     }
 
+    public function test_sign_accepts_request_interface(): void
+    {
+        $config = new UrlSigningConfig(created: 1000000);
+        $signer = new UrlSigner(new HmacSha256('test-secret-key'), $this->requestFactory, $config);
+
+        $request = $this->requestFactory->createRequest('POST', 'https://example.com/form');
+        $signed = $signer->sign($request);
+
+        $params = $this->extractQueryParams($signed);
+        $this->assertArrayHasKey('signature', $params);
+        $this->assertStringStartsWith('https://example.com/form?', $signed);
+    }
+
+    public function test_sign_request_preserves_method_in_signature(): void
+    {
+        $config = new UrlSigningConfig(components: ['@method', '@target-uri'], created: 1000000);
+        $algorithm = new HmacSha256('test-secret-key');
+
+        $signer = new UrlSigner($algorithm, $this->requestFactory, $config);
+
+        // Sign the same URL with different methods — signatures should differ
+        $getRequest = $this->requestFactory->createRequest('GET', 'https://example.com/form');
+        $postRequest = $this->requestFactory->createRequest('POST', 'https://example.com/form');
+
+        $signedGet = $signer->sign($getRequest);
+        $signedPost = $signer->sign($postRequest);
+
+        $getParams = $this->extractQueryParams($signedGet);
+        $postParams = $this->extractQueryParams($signedPost);
+
+        $this->assertNotSame($getParams['signature'], $postParams['signature']);
+    }
+
+    public function test_with_current_time_factory(): void
+    {
+        $before = time();
+        $config = UrlSigningConfig::withCurrentTime(expiresAfter: 3600);
+        $after = time();
+
+        $signer = new UrlSigner(new HmacSha256('test-secret-key'), $this->requestFactory, $config);
+
+        $signed = $signer->sign('https://example.com/path');
+        $params = $this->extractQueryParams($signed);
+
+        $this->assertArrayHasKey('signature-input', $params);
+        $this->assertStringContainsString('created=', $params['signature-input']);
+        $this->assertStringContainsString('expires=', $params['signature-input']);
+
+        // Verify the created timestamp is within the expected range
+        $this->assertGreaterThanOrEqual($before, $config->created);
+        $this->assertLessThanOrEqual($after, $config->created);
+    }
+
     /**
      * Extract query parameters from a URL string.
-     *
-     * Uses manual parsing to handle structured field values that contain
-     * characters like ";", "=", and quotes.
      *
      * @return array<string, string>
      */
     private function extractQueryParams(string $url): array
     {
-        $queryString = parse_url($url, PHP_URL_QUERY);
-
-        if ($queryString === null || $queryString === false) {
-            return [];
-        }
-
-        $params = [];
-
-        // Manual parsing to avoid parse_str issues with ; and nested keys
-        foreach (explode('&', $queryString) as $pair) {
-            $parts = explode('=', $pair, 2);
-            $name = urldecode($parts[0]);
-            $value = isset($parts[1]) ? urldecode($parts[1]) : '';
-            $params[$name] = $value;
-        }
-
-        return $params;
+        return \League\Uri\Components\Query::fromUri($url)->parameters();
     }
 }

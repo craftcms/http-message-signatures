@@ -118,6 +118,14 @@ final class ComponentDeriverTest extends TestCase
         $this->assertSame('value', $this->deriver->deriveComponent($component, $this->request));
     }
 
+    public function testQueryParamTreatsPlusAsLiteralPlus(): void
+    {
+        $request = new Request('GET', 'https://example.com/path?param=a+b');
+        $component = Item::fromHttpValue('"@query-param";name="param"');
+
+        $this->assertSame('a%2Bb', $this->deriver->deriveComponent($component, $request));
+    }
+
     public function testQueryParamThrowsWhenParameterIsMissing(): void
     {
         $this->expectException(InvalidArgumentException::class);

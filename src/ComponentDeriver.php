@@ -7,6 +7,7 @@ namespace HttpMessageSignatures;
 use Bakame\Http\StructuredFields\Item;
 use Bakame\Http\StructuredFields\Token;
 use InvalidArgumentException;
+use League\Uri\Components\Query;
 use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -191,17 +192,11 @@ class ComponentDeriver
             throw new InvalidArgumentException('@query-param requires a "name" parameter');
         }
 
-        $queryString = $request->getUri()->getQuery();
-
-        // Parse using proper percent-decoded comparison per RFC 9421 §2.2.8:
-        // Decode, then re-encode to canonicalize percent-encoding.
-        foreach (explode('&', $queryString) as $pair) {
-            $parts = explode('=', $pair, 2);
-            $name = urldecode($parts[0]);
-            $value = isset($parts[1]) ? urldecode($parts[1]) : '';
-
+        // Parse using League URI (RFC3986 semantics), compare decoded name,
+        // then canonicalize by percent-encoding the decoded value.
+        foreach (Query::fromUri($request->getUri())->pairs() as $name => $value) {
             if ($name === $paramName) {
-                return rawurlencode($value);
+                return rawurlencode($value ?? '');
             }
         }
 

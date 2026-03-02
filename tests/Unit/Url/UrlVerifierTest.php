@@ -18,14 +18,16 @@ final class UrlVerifierTest extends TestCase
 
     private UrlVerifier $verifier;
 
+    private RequestFactory $requestFactory;
+
     protected function setUp(): void
     {
         $config = new UrlSigningConfig(created: 1000000);
         $algorithm = new HmacSha256('test-secret-key');
-        $requestFactory = new RequestFactory();
+        $this->requestFactory = new RequestFactory();
 
-        $this->signer = new UrlSigner($algorithm, $requestFactory, $config);
-        $this->verifier = new UrlVerifier($algorithm, $requestFactory, $config);
+        $this->signer = new UrlSigner($algorithm, $this->requestFactory, $config);
+        $this->verifier = new UrlVerifier($algorithm, $this->requestFactory, $config);
     }
 
     public function test_verify_valid_signed_url(): void
@@ -138,5 +140,40 @@ final class UrlVerifierTest extends TestCase
         $signed = $signer->sign('https://example.com/path');
 
         $this->assertTrue($verifier->verify($signed));
+    }
+
+    public function test_verify_round_trip_with_post_request(): void
+    {
+        $config = new UrlSigningConfig(components: ['@method', '@target-uri'], created: 1000000);
+        $algorithm = new HmacSha256('test-secret-key');
+
+        $signer = new UrlSigner($algorithm, $this->requestFactory, $config);
+        $verifier = new UrlVerifier($algorithm, $this->requestFactory, $config);
+
+        $postRequest = $this->requestFactory->createRequest('POST', 'https://example.com/form');
+        $signed = $signer->sign($postRequest);
+
+        // Verify with POST request — should pass
+        $verifyRequest = $this->requestFactory->createRequest('POST', $signed);
+        $this->assertTrue($verifier->verify($verifyRequest));
+    }
+
+    public function test_verify_fails_when_method_mismatch(): void
+    {
+        $config = new UrlSigningConfig(components: ['@method', '@target-uri'], created: 1000000);
+        $algorithm = new HmacSha256('test-secret-key');
+
+        $signer = new UrlSigner($algorithm, $this->requestFactory, $config);
+        $verifier = new UrlVerifier($algorithm, $this->requestFactory, $config);
+
+        // Sign as POST
+        $postRequest = $this->requestFactory->createRequest('POST', 'https://example.com/form');
+        $signed = $signer->sign($postRequest);
+
+        // Verify as GET — should fail because @method is covered
+        $this->expectException(VerificationException::class);
+        $this->expectExceptionMessage('verification failed');
+
+        $verifier->verify($signed); // string defaults to GET
     }
 }
