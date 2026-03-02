@@ -29,3 +29,4 @@ inline-variable-return = { enabled = false }
 readable-literal = { enabled = false }
 cyclomatic-complexity = { enabled = false }
 too-many-methods = { enabled = false }
+excessive-parameter-list = { enabled = false }

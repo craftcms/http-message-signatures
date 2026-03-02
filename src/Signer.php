@@ -56,7 +56,7 @@ class Signer
         $originalRequest = $options['originalRequest'] ?? null;
 
         // Convert component strings to bakame Item objects
-        $componentItems = array_map($this->parseComponentIdentifier(...), $components);
+        $componentItems = array_map(self::parseComponentIdentifier(...), $components);
 
         // Build signature parameters
         $signatureParameters = $this->buildSignatureParameters($options);
@@ -92,7 +92,7 @@ class Signer
      * - "content-type" -> Item with string value "content-type"
      * - '@query-param;name="foo"' -> parsed as structured field Item with parameters
      */
-    private function parseComponentIdentifier(string $identifier): Item
+    public static function parseComponentIdentifier(string $identifier): Item
     {
         // If it contains parameters (e.g., @query-param;name="foo"), parse as structured field Item
         if (str_contains($identifier, ';')) {
