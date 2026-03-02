@@ -18,7 +18,7 @@ A PHP 8.4+ implementation of [HTTP Message Signatures](https://www.rfc-editor.or
 ## Installation
 
 ```bash
-composer require timkelty/http-message-signatures
+composer require craftcms/http-message-signatures
 ```
 
 ## Requirements
@@ -160,7 +160,7 @@ This package includes first-class Laravel support:
 ### Installation
 
 ```bash
-composer require timkelty/http-message-signatures
+composer require craftcms/http-message-signatures
 ```
 
 ### Configuration

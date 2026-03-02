@@ -1,5 +1,5 @@
 {
-    "name": "timkelty/http-message-signatures",
+    "name": "craftcms/http-message-signatures",
     "description": "PSR-7 compliant PHP 8.1+ implementation of HTTP Message Signatures (RFC 9421)",
     "type": "library",
     "keywords": ["http", "signature", "rfc9421", "security", "authentication"],
