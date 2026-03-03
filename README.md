@@ -153,94 +153,6 @@ The following components can be included in signatures:
 **Query Parameters:**
 - `@query-param;name="paramname"` - Specific query parameter
 
-## Laravel Integration
-
-This package includes first-class Laravel support:
-
-### Installation
-
-```bash
-composer require craftcms/http-message-signatures
-```
-
-### Configuration
-
-Publish the configuration file:
-
-```bash
-php artisan vendor:publish --tag=http-message-signatures-config
-```
-
-Configure your keys in `.env`:
-
-```env
-HTTP_SIGNATURE_ALGORITHM=hmac-sha256
-HTTP_SIGNATURE_HMAC_SECRET_KEY=your-secret-key
-HTTP_SIGNATURE_KEY_ID=my-key-id
-```
-
-### Usage
-
-#### Using Facades
-
-```php
-use HttpMessageSignatures\Laravel\Facades\HttpMessageSigner;
-use HttpMessageSignatures\Laravel\Facades\HttpMessageVerifier;
-
-// Sign a request
-$signedRequest = HttpMessageSigner::sign($request, [
-    '@method', '@path', '@authority', 'content-type'
-], ['keyid' => 'my-key']);
-
-// Verify a request
-$isValid = HttpMessageVerifier::verify($request);
-```
-
-#### Using Helper Functions
-
-```php
-use function HttpMessageSignatures\Laravel\sign_request;
-use function HttpMessageSignatures\Laravel\sign_http_message;
-use function HttpMessageSignatures\Laravel\verify_http_message;
-
-// Sign a Laravel Request
-$signedRequest = sign_request($request);
-
-// Sign any HTTP message
-$signedMessage = sign_http_message($message);
-
-// Verify an HTTP message
-$isValid = verify_http_message($message);
-```
-
-#### Using Dependency Injection
-
-```php
-use HttpMessageSignatures\Signer;
-use HttpMessageSignatures\Verifier;
-
-class MyController
-{
-    public function __construct(
-        private Signer $signer,
-        private Verifier $verifier
-    ) {}
-
-    public function sign(Request $request)
-    {
-        $signed = $this->signer->sign($request, [
-            '@method', '@path', '@authority'
-        ], ['keyid' => 'my-key']);
-
-        return response()->json(['signed' => true]);
-    }
-}
-```
-
-### Service Provider
-
-The package automatically registers a service provider. All classes are bound in the container and can be injected via dependency injection.
-
 ## PSR-7 Compliance
 
 This package is fully PSR-7 compliant:
@@ -250,33 +162,26 @@ This package is fully PSR-7 compliant:
 - Uses only PSR-7 interfaces (`MessageInterface`, `RequestInterface`, `ResponseInterface`)
 - No direct dependencies on specific PSR-7 implementations
 
-## Development
-
-### Running Tests
+## Testing
 
 ```bash
 composer test
 ```
 
-### Code Style
-
-This project uses [Mago](https://github.com/carthage-software/mago) for formatting and linting:
+## Code Quality
 
 ```bash
-composer fmt
+# Run all checks (lint + PHPStan + tests)
+composer check
+
+# Lint code
 composer lint
-# or (auto-fix)
-composer lint:fix
-```
 
-### Static Analysis
+# Auto-fix lint issues
+composer fix
 
-This project uses [PHPStan](https://phpstan.org/) for static analysis:
-
-```bash
+# Static analysis
 composer phpstan
-# or
-./vendor/bin/phpstan analyse
 ```
 
 ## License

@@ -31,16 +31,11 @@
     },
     "scripts": {
         "test": "vendor/bin/phpunit --configuration phpunit.xml",
-        "test-coverage": "vendor/bin/phpunit --configuration phpunit.xml --coverage-text",
-        "fmt": "vendor/bin/mago fmt",
+        "coverage": "vendor/bin/phpunit --configuration phpunit.xml --coverage-text",
         "lint": "vendor/bin/mago lint --potentially-unsafe --minimum-fail-level=error",
-        "lint:fix": "vendor/bin/mago lint --fix --format-after-fix",
-        "style": [
-            "@fmt",
-            "@lint:fix"
-        ],
-        "phpstan": "phpstan analyse",
-        "analyse": [
+        "fix": "vendor/bin/mago lint --fix --format-after-fix",
+        "phpstan": "phpstan --memory-limit=1G",
+        "check": [
             "@lint",
             "@phpstan",
             "@test"
