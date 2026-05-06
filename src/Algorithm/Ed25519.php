@@ -26,7 +26,7 @@ class Ed25519 implements AlgorithmInterface
      * @param  non-empty-string  $privateKey  Either a 32-byte seed or a 64-byte Ed25519 secret key
      * @param  non-empty-string|null  $publicKey  32-byte public key (derived from private key if not provided)
      */
-    public function __construct(string $privateKey, string $publicKey = null)
+    public function __construct(string $privateKey, ?string $publicKey = null)
     {
         $keyLength = strlen($privateKey);
 

@@ -24,7 +24,7 @@ class Verifier
 
     public function __construct(
         private readonly AlgorithmInterface $algorithm,
-        SignatureBase $signatureBase = null,
+        ?SignatureBase $signatureBase = null,
     ) {
         $this->signatureBase = $signatureBase ?? new SignatureBase();
     }
@@ -41,8 +41,8 @@ class Verifier
      */
     public function verify(
         MessageInterface $message,
-        string $signatureId = null,
-        RequestInterface $originalRequest = null,
+        ?string $signatureId = null,
+        ?RequestInterface $originalRequest = null,
     ): bool {
         // Extract and parse the Signature-Input and Signature headers
         $signatureInputHeader = $this->extractRequiredHeader($message, 'Signature-Input');

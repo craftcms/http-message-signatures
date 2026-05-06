@@ -35,7 +35,7 @@ class SignatureBase
     public function build(
         InnerList $signatureInput,
         MessageInterface $message,
-        RequestInterface $originalRequest = null,
+        ?RequestInterface $originalRequest = null,
     ): string {
         $lines = [];
 

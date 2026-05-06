@@ -59,7 +59,7 @@ final class UrlSigner
 
         // Strip any existing signature params
         $cleanUrl = Modifier::wrap($uriString)
-            ->removeQueryPairs($this->config->signatureParam, $this->config->signatureInputParam)
+            ->removeQueryPairsByKey($this->config->signatureParam, $this->config->signatureInputParam)
             ->toString();
 
         // Create request with resolved method and clean URL

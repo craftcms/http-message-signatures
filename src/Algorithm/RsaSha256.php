@@ -19,7 +19,10 @@ class RsaSha256 implements AlgorithmInterface
 
     private ?OpenSSLAsymmetricKey $publicKey;
 
-    public function __construct(OpenSSLAsymmetricKey|string $privateKey, OpenSSLAsymmetricKey|string $publicKey = null)
+    public function __construct(
+        OpenSSLAsymmetricKey|string $privateKey,
+        OpenSSLAsymmetricKey|string|null $publicKey = null,
+    )
     {
         $this->privateKey = $this->resolvePrivateKey($privateKey);
         $this->publicKey = $publicKey !== null ? $this->resolvePublicKey($publicKey) : null;
