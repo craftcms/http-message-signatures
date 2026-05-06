@@ -24,7 +24,7 @@ class Signer
 
     public function __construct(
         private readonly AlgorithmInterface $algorithm,
-        SignatureBase $signatureBase = null,
+        ?SignatureBase $signatureBase = null,
     ) {
         $this->signatureBase = $signatureBase ?? new SignatureBase();
     }

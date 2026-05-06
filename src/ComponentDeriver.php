@@ -30,7 +30,7 @@ class ComponentDeriver
     public function deriveComponent(
         Item $componentId,
         MessageInterface $message,
-        RequestInterface $originalRequest = null,
+        ?RequestInterface $originalRequest = null,
     ): string {
         $value = $componentId->value();
 
