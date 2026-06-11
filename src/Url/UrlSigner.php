@@ -13,6 +13,8 @@ use Psr\Http\Message\RequestInterface;
 
 final class UrlSigner
 {
+    private const SIGNATURE_INPUT_PARAM = 'signature-input';
+
     private SignatureBase $signatureBase;
 
     public function __construct(
@@ -54,9 +56,9 @@ final class UrlSigner
             $uriString = $url;
         }
 
-        // Strip any existing signature param
+        // Strip any existing signature artifacts.
         $cleanUrl = Modifier::wrap($uriString)
-            ->removeQueryPairsByKey($this->config->signatureParam)
+            ->removeQueryPairsByKey($this->config->signatureParam, self::SIGNATURE_INPUT_PARAM)
             ->toString();
 
         // Create request with resolved method and clean URL

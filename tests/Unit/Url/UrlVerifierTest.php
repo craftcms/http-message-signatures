@@ -65,6 +65,14 @@ final class UrlVerifierTest extends TestCase
         $this->assertTrue($verifier->verify($tampered));
     }
 
+    public function test_verify_strips_signature_input_param(): void
+    {
+        $signed = $this->signer->sign('https://example.com/path?foo=bar');
+        $withSignatureInput = $signed . '&signature-input=legacy';
+
+        $this->assertTrue($this->verifier->verify($withSignatureInput));
+    }
+
     public function test_verify_throws_on_tampered_path(): void
     {
         $signed = $this->signer->sign('https://example.com/original');

@@ -15,6 +15,8 @@ use Psr\Http\Message\RequestInterface;
 
 final class UrlVerifier
 {
+    private const SIGNATURE_INPUT_PARAM = 'signature-input';
+
     private SignatureBase $signatureBase;
 
     public function __construct(
@@ -71,9 +73,9 @@ final class UrlVerifier
         // Check expiration
         $this->ensureNotExpired($signatureInput);
 
-        // Strip signature param to get the clean URL
+        // Strip signature artifacts to get the clean URL
         $cleanUrl = Modifier::wrap($uriString)
-            ->removeQueryPairsByKey($this->config->signatureParam)
+            ->removeQueryPairsByKey($this->config->signatureParam, self::SIGNATURE_INPUT_PARAM)
             ->toString();
 
         // Create request with resolved method and clean URL

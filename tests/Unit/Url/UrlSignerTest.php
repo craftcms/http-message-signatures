@@ -48,7 +48,7 @@ final class UrlSignerTest extends TestCase
         $params = $this->extractQueryParams($signed);
 
         $this->assertSame('1', $params['keep']);
-        $this->assertSame('keep', $params['signature-input']);
+        $this->assertArrayNotHasKey('signature-input', $params);
         $this->assertNotSame('old', $params['signature']);
     }
 
