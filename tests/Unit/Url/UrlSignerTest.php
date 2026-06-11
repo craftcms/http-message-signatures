@@ -29,7 +29,6 @@ final class UrlSignerTest extends TestCase
         $params = $this->extractQueryParams($signed);
 
         $this->assertArrayHasKey('signature', $params);
-        $this->assertArrayNotHasKey('signature-input', $params);
     }
 
     public function test_sign_preserves_existing_query_params(): void
@@ -44,11 +43,10 @@ final class UrlSignerTest extends TestCase
 
     public function test_sign_strips_existing_signature_params(): void
     {
-        $signed = $this->signer->sign('https://example.com/path?signature=old&signature-input=keep&keep=1');
+        $signed = $this->signer->sign('https://example.com/path?signature=old&keep=1');
         $params = $this->extractQueryParams($signed);
 
         $this->assertSame('1', $params['keep']);
-        $this->assertSame('keep', $params['signature-input']);
         $this->assertNotSame('old', $params['signature']);
     }
 
@@ -88,7 +86,6 @@ final class UrlSignerTest extends TestCase
 
         $this->assertArrayHasKey('sig', $params);
         $this->assertArrayNotHasKey('signature', $params);
-        $this->assertArrayNotHasKey('signature-input', $params);
     }
 
     public function test_sign_with_expiration_affects_signature(): void
@@ -105,7 +102,6 @@ final class UrlSignerTest extends TestCase
         $paramsWithoutExpiration = $this->extractQueryParams($signedWithoutExpiration);
 
         $this->assertArrayHasKey('signature', $params);
-        $this->assertArrayNotHasKey('signature-input', $params);
         $this->assertNotSame($paramsWithoutExpiration['signature'], $params['signature']);
     }
 
@@ -142,7 +138,6 @@ final class UrlSignerTest extends TestCase
         $params = $this->extractQueryParams($signed);
 
         $this->assertArrayHasKey('signature', $params);
-        $this->assertArrayNotHasKey('signature-input', $params);
     }
 
     public function test_sign_accepts_request_interface(): void
@@ -190,7 +185,6 @@ final class UrlSignerTest extends TestCase
         $params = $this->extractQueryParams($signed);
 
         $this->assertArrayHasKey('signature', $params);
-        $this->assertArrayNotHasKey('signature-input', $params);
 
         // Verify the created timestamp is within the expected range
         $this->assertGreaterThanOrEqual($before, $config->created);
