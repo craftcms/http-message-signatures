@@ -20,33 +20,18 @@ final class UrlSignatureInput
 
     private static function parameters(UrlSigningConfig $config, AlgorithmInterface $algorithm): Parameters
     {
-        $params = [];
-
-        if ($config->created !== null) {
-            $params['created'] = $config->created;
-        }
-
-        if ($config->expiresAfter !== null && $config->created !== null) {
-            $params['expires'] = $config->created + $config->expiresAfter;
-        }
-
-        if ($config->nonce !== null) {
-            $params['nonce'] = $config->nonce;
-        }
-
         $algId = $algorithm->getAlgorithmId();
 
-        if ($algId !== '') {
-            $params['alg'] = $algId;
-        }
-
-        if ($config->keyid !== null) {
-            $params['keyid'] = $config->keyid;
-        }
-
-        if ($config->tag !== null) {
-            $params['tag'] = $config->tag;
-        }
+        $params = array_filter([
+            'created' => $config->created,
+            'expires' => $config->created !== null && $config->expiresAfter !== null
+                ? $config->created + $config->expiresAfter
+                : null,
+            'nonce' => $config->nonce,
+            'alg' => $algId !== '' ? $algId : null,
+            'keyid' => $config->keyid,
+            'tag' => $config->tag,
+        ], static fn (mixed $value): bool => $value !== null);
 
         return Parameters::fromAssociative($params);
     }
