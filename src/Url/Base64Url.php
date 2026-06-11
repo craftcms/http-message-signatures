@@ -23,7 +23,8 @@ final class Base64Url
         }
 
         // PHP only supports standard base64 natively, so normalize RFC 4648
-        // base64url into padded base64 before decoding.
+        // base64url into padded base64 before decoding. If this needs more
+        // surface area, prefer a focused package like spomky-labs/base64url.
         $paddingLength = (4 - strlen($data) % 4) % 4;
         $paddedData = $data . str_repeat('=', $paddingLength);
         $decoded = base64_decode(strtr($paddedData, '-_', '+/'), true);
