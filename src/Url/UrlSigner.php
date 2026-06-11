@@ -4,12 +4,9 @@ declare(strict_types=1);
 
 namespace HttpMessageSignatures\Url;
 
-use Bakame\Http\StructuredFields\InnerList;
-use Bakame\Http\StructuredFields\Parameters;
 use HttpMessageSignatures\Algorithm\AlgorithmInterface;
 use HttpMessageSignatures\Exception\SignatureException;
 use HttpMessageSignatures\SignatureBase;
-use HttpMessageSignatures\Signer;
 use League\Uri\Modifier;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
@@ -28,7 +25,7 @@ final class UrlSigner
     }
 
     /**
-     * Sign a URL and return the URL with signature query parameters appended.
+     * Sign a URL and return the URL with a signature query parameter appended.
      *
      * Accepts a plain URL string or a PSR-7 RequestInterface.
      * When a RequestInterface is passed, its method is preserved — this allows
@@ -38,7 +35,7 @@ final class UrlSigner
      * When a string is passed, a synthetic GET request is created internally.
      *
      * @param  string|RequestInterface  $url  The URL (or request) to sign
-     * @return string The signed URL with signature and signature-input query parameters
+     * @return string The signed URL with a signature query parameter
      *
      * @throws SignatureException
      */
@@ -57,22 +54,15 @@ final class UrlSigner
             $uriString = $url;
         }
 
-        // Strip any existing signature params
+        // Strip any existing signature param
         $cleanUrl = Modifier::wrap($uriString)
-            ->removeQueryPairsByKey($this->config->signatureParam, $this->config->signatureInputParam)
+            ->removeQueryPairsByKey($this->config->signatureParam)
             ->toString();
 
         // Create request with resolved method and clean URL
         $request = $this->requestFactory->createRequest($method, $cleanUrl);
 
-        // Parse component identifiers
-        $componentItems = array_map(Signer::parseComponentIdentifier(...), $this->config->components);
-
-        // Build signature parameters
-        $signatureParameters = $this->buildSignatureParameters();
-
-        // Create InnerList
-        $signatureInput = InnerList::fromAssociative($componentItems, $signatureParameters);
+        $signatureInput = UrlSignatureInput::fromConfig($this->config, $this->algorithm);
 
         // Build signature base string
         $signatureBaseString = $this->signatureBase->build($signatureInput, $request);
@@ -80,57 +70,11 @@ final class UrlSigner
         // Sign
         $rawSignature = $this->algorithm->sign($signatureBaseString);
 
-        // Append signature-input and signature query params
+        // Append signature query param
         return Modifier::wrap($cleanUrl)
             ->appendQueryParameters([
-                $this->config->signatureInputParam => $signatureInput->toHttpValue(),
-                $this->config->signatureParam => self::base64urlEncode($rawSignature),
+                $this->config->signatureParam => Base64Url::encode($rawSignature),
             ])
             ->toString();
-    }
-
-    /**
-     * @see Signer::buildSignatureParameters() for a similar implementation — consider
-     *      extracting a shared builder if more signing surfaces are added.
-     */
-    private function buildSignatureParameters(): Parameters
-    {
-        $params = [];
-
-        if ($this->config->created !== null) {
-            $params['created'] = $this->config->created;
-        }
-
-        if ($this->config->expiresAfter !== null && $this->config->created !== null) {
-            $params['expires'] = $this->config->created + $this->config->expiresAfter;
-        }
-
-        if ($this->config->nonce !== null) {
-            $params['nonce'] = $this->config->nonce;
-        }
-
-        $algId = $this->algorithm->getAlgorithmId();
-
-        if ($algId !== '') {
-            $params['alg'] = $algId;
-        }
-
-        if ($this->config->keyid !== null) {
-            $params['keyid'] = $this->config->keyid;
-        }
-
-        if ($this->config->tag !== null) {
-            $params['tag'] = $this->config->tag;
-        }
-
-        return Parameters::fromAssociative($params);
-    }
-
-    /**
-     * Base64url encode (RFC 4648 Section 5), no padding.
-     */
-    private static function base64urlEncode(string $data): string
-    {
-        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
     }
 }

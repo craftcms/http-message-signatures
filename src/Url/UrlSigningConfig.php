@@ -9,7 +9,6 @@ final class UrlSigningConfig
     /**
      * @param  array<string>  $components  Component identifiers to cover (default: full URL)
      * @param  string  $signatureParam  Query parameter name for the signature
-     * @param  string  $signatureInputParam  Query parameter name for the signature input
      * @param  int|null  $created  Unix timestamp for 'created' param (null = omit)
      * @param  int|null  $expiresAfter  Seconds after $created until expiration (null = no expiry, requires $created)
      * @param  string|null  $keyid  Key identifier
@@ -19,7 +18,6 @@ final class UrlSigningConfig
     public function __construct(
         public readonly array $components = ['@target-uri'],
         public readonly string $signatureParam = 'signature',
-        public readonly string $signatureInputParam = 'signature-input',
         public readonly ?int $created = null,
         public readonly ?int $expiresAfter = null,
         public readonly ?string $keyid = null,
@@ -38,7 +36,6 @@ final class UrlSigningConfig
     public static function withCurrentTime(
         array $components = ['@target-uri'],
         string $signatureParam = 'signature',
-        string $signatureInputParam = 'signature-input',
         ?int $expiresAfter = null,
         ?string $keyid = null,
         ?string $nonce = null,
@@ -47,7 +44,6 @@ final class UrlSigningConfig
         return new self(
             components: $components,
             signatureParam: $signatureParam,
-            signatureInputParam: $signatureInputParam,
             created: time(),
             expiresAfter: $expiresAfter,
             keyid: $keyid,

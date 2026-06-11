@@ -52,12 +52,17 @@ final class UrlVerifierTest extends TestCase
         $this->verifier->verify('https://example.com/path');
     }
 
-    public function test_verify_throws_when_signature_input_missing(): void
+    public function test_verify_uses_configured_components_without_signature_input_param(): void
     {
-        $this->expectException(VerificationException::class);
-        $this->expectExceptionMessage('Signature input parameter');
+        $config = new UrlSigningConfig(components: ['@path'], created: 1000000);
+        $algorithm = new HmacSha256('test-secret-key');
+        $signer = new UrlSigner($algorithm, $this->requestFactory, $config);
+        $verifier = new UrlVerifier($algorithm, $this->requestFactory, $config);
 
-        $this->verifier->verify('https://example.com/path?signature=abc123');
+        $signed = $signer->sign('https://example.com/path?foo=bar');
+        $tampered = str_replace('foo=bar', 'foo=baz', $signed);
+
+        $this->assertTrue($verifier->verify($tampered));
     }
 
     public function test_verify_throws_on_tampered_path(): void
@@ -109,6 +114,19 @@ final class UrlVerifierTest extends TestCase
         $wrongVerifier->verify($signed);
     }
 
+    public function test_verify_throws_on_signature_with_invalid_base64url_alphabet(): void
+    {
+        $signed = $this->signer->sign('https://example.com/path');
+        $tampered = preg_replace('/([?&]signature=)[^&]*/', '$1abcd/', $signed);
+
+        $this->assertNotNull($tampered);
+
+        $this->expectException(VerificationException::class);
+        $this->expectExceptionMessage('Invalid base64url data');
+
+        $this->verifier->verify($tampered);
+    }
+
     public function test_verify_throws_on_expired_signature(): void
     {
         $config = new UrlSigningConfig(created: 1000000, expiresAfter: 1); // 1 second — already expired relative to timestamp 1000000
@@ -129,7 +147,7 @@ final class UrlVerifierTest extends TestCase
 
     public function test_verify_with_custom_param_names(): void
     {
-        $config = new UrlSigningConfig(signatureParam: 'sig', signatureInputParam: 'sig-input', created: 1000000);
+        $config = new UrlSigningConfig(signatureParam: 'sig', created: 1000000);
 
         $algorithm = new HmacSha256('test-secret-key');
         $requestFactory = new RequestFactory();

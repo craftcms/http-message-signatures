@@ -7,7 +7,6 @@ namespace HttpMessageSignatures;
 use Bakame\Http\StructuredFields\Item;
 use Bakame\Http\StructuredFields\Token;
 use InvalidArgumentException;
-use League\Uri\Components\Query;
 use Psr\Http\Message\MessageInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -71,7 +70,7 @@ class ComponentDeriver
             '@request-target' => $this->deriveRequestTarget($this->resolveRequest($message, $originalRequest, $name)),
             '@path' => $this->derivePath($this->resolveRequest($message, $originalRequest, $name)),
             '@query' => $this->deriveQuery($this->resolveRequest($message, $originalRequest, $name)),
-            '@query-param' => $this->deriveQueryParam($componentId, $this->resolveRequest(
+            '@query-param' => QueryParamComponent::derive($componentId, $this->resolveRequest(
                 $message,
                 $originalRequest,
                 $name,
@@ -108,7 +107,7 @@ class ComponentDeriver
      */
     private function deriveMethod(RequestInterface $request): string
     {
-        return strtoupper($request->getMethod());
+        return $request->getMethod();
     }
 
     /**
@@ -176,31 +175,6 @@ class ComponentDeriver
         $query = $request->getUri()->getQuery();
 
         return '?' . $query;
-    }
-
-    /**
-     * RFC 9421 Section 2.2.8: Derive a specific query parameter value.
-     * The parameter name is taken from the component identifier's "name" parameter.
-     *
-     * @see https://www.rfc-editor.org/rfc/rfc9421.html#section-2.2.8
-     */
-    private function deriveQueryParam(Item $componentId, RequestInterface $request): string
-    {
-        $paramName = $componentId->parameterByKey('name');
-
-        if ($paramName === null || !is_string($paramName)) {
-            throw new InvalidArgumentException('@query-param requires a "name" parameter');
-        }
-
-        // Parse using League URI (RFC3986 semantics), compare decoded name,
-        // then canonicalize by percent-encoding the decoded value.
-        foreach (Query::fromUri($request->getUri())->pairs() as $name => $value) {
-            if ($name === $paramName) {
-                return rawurlencode($value ?? '');
-            }
-        }
-
-        throw new InvalidArgumentException("Query parameter \"{$paramName}\" not found in request");
     }
 
     /**

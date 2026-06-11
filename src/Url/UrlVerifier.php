@@ -60,25 +60,20 @@ final class UrlVerifier
             throw new VerificationException("Signature parameter '{$this->config->signatureParam}' not found in URL");
         }
 
-        $rawSignature = self::base64urlDecode((string) $encodedSignature);
+        $rawSignature = Base64Url::decode((string) $encodedSignature);
 
-        // Extract and parse signature-input
-        $signatureInputValue = $query->parameter($this->config->signatureInputParam);
-
-        if ($signatureInputValue === null) {
-            throw new VerificationException(
-                "Signature input parameter '{$this->config->signatureInputParam}' not found in URL",
-            );
+        if ($this->config->components === []) {
+            throw new VerificationException('At least one component must be specified');
         }
 
-        $signatureInput = $this->parseSignatureInput((string) $signatureInputValue);
+        $signatureInput = UrlSignatureInput::fromConfig($this->config, $this->algorithm);
 
         // Check expiration
         $this->ensureNotExpired($signatureInput);
 
-        // Strip signature params to get the clean URL
+        // Strip signature param to get the clean URL
         $cleanUrl = Modifier::wrap($uriString)
-            ->removeQueryPairsByKey($this->config->signatureParam, $this->config->signatureInputParam)
+            ->removeQueryPairsByKey($this->config->signatureParam)
             ->toString();
 
         // Create request with resolved method and clean URL
@@ -93,19 +88,6 @@ final class UrlVerifier
         }
 
         return true;
-    }
-
-    private function parseSignatureInput(string $value): InnerList
-    {
-        try {
-            return InnerList::fromHttpValue($value);
-        } catch (\Throwable $e) {
-            throw new VerificationException(
-                'Failed to parse signature-input as structured field inner list: ' . $e->getMessage(),
-                0,
-                $e,
-            );
-        }
     }
 
     private function ensureNotExpired(InnerList $signatureInput): void
@@ -125,19 +107,4 @@ final class UrlVerifier
         }
     }
 
-    /**
-     * Base64url decode (RFC 4648 Section 5).
-     *
-     * @throws VerificationException
-     */
-    private static function base64urlDecode(string $data): string
-    {
-        $decoded = base64_decode(strtr($data, '-_', '+/'), true);
-
-        if ($decoded === false) {
-            throw new VerificationException('Invalid base64url data');
-        }
-
-        return $decoded;
-    }
 }

@@ -1,10 +1,10 @@
 # HTTP Message Signatures (RFC 9421)
 
-A PHP 8.4+ implementation of [HTTP Message Signatures](https://www.rfc-editor.org/rfc/rfc9421.html) as specified in RFC 9421.
+A PHP 8.1+ implementation of [HTTP Message Signatures](https://www.rfc-editor.org/rfc/rfc9421.html) as specified in RFC 9421.
 
 ## Features
 
-- ✅ Full RFC 9421 compliance
+- ✅ RFC 9421 signing and verification support
 - ✅ **PSR-7 compliant** - Works with any PSR-7 HTTP message implementation
 - ✅ Support for multiple signature algorithms:
   - HMAC-SHA256
@@ -23,7 +23,7 @@ composer require craftcms/http-message-signatures
 
 ## Requirements
 
-- PHP 8.4 or higher
+- PHP 8.1 or higher
 - PSR-7 HTTP message implementation (e.g., `guzzlehttp/psr7`, `nyholm/psr7`, `slim/psr7`)
 
 ## Dependencies

@@ -10,6 +10,7 @@ use GuzzleHttp\Psr7\Response;
 use HttpMessageSignatures\ComponentDeriver;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\RequestInterface;
 
 final class ComponentDeriverTest extends TestCase
 {
@@ -32,9 +33,14 @@ final class ComponentDeriverTest extends TestCase
         );
     }
 
-    public function testMethodReturnsUppercaseMethod(): void
+    public function testMethodReturnsMethodWithoutChangingCase(): void
     {
         $this->assertSame('POST', $this->deriver->deriveComponent(Item::fromString('@method'), $this->request));
+
+        $request = $this->createStub(RequestInterface::class);
+        $request->method('getMethod')->willReturn('custom');
+
+        $this->assertSame('custom', $this->deriver->deriveComponent(Item::fromString('@method'), $request));
     }
 
     public function testPathReturnsTheRequestPath(): void
@@ -118,12 +124,31 @@ final class ComponentDeriverTest extends TestCase
         $this->assertSame('value', $this->deriver->deriveComponent($component, $this->request));
     }
 
-    public function testQueryParamTreatsPlusAsLiteralPlus(): void
+    public function testQueryParamTreatsPlusAsSpace(): void
     {
         $request = new Request('GET', 'https://example.com/path?param=a+b');
         $component = Item::fromHttpValue('"@query-param";name="param"');
 
-        $this->assertSame('a%2Bb', $this->deriver->deriveComponent($component, $request));
+        $this->assertSame('a%20b', $this->deriver->deriveComponent($component, $request));
+    }
+
+    public function testQueryParamMatchesEncodedParameterName(): void
+    {
+        $request = new Request('GET', 'https://example.com/path?fa%C3%A7ade%22%3A%20=something');
+        $component = Item::fromHttpValue('"@query-param";name="fa%C3%A7ade%22%3A%20"');
+
+        $this->assertSame('something', $this->deriver->deriveComponent($component, $request));
+    }
+
+    public function testQueryParamThrowsWhenParameterOccursMoreThanOnce(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('occurs more than once');
+
+        $request = new Request('GET', 'https://example.com/path?param=one&param=two');
+        $component = Item::fromHttpValue('"@query-param";name="param"');
+
+        $this->deriver->deriveComponent($component, $request);
     }
 
     public function testQueryParamThrowsWhenParameterIsMissing(): void

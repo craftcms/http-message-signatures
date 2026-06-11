@@ -99,11 +99,8 @@ class Signer
             // Ensure the base identifier is quoted for structured field parsing
             // User may pass @query-param;name="foo" but we need "@query-param";name="foo"
             if (!str_starts_with($identifier, '"')) {
-                /** @var int $semiPos — guaranteed by str_contains check above */
-                $semiPos = (int) strpos($identifier, ';');
-                $base = substr($identifier, 0, $semiPos);
-                $params = substr($identifier, $semiPos);
-                $identifier = '"' . strtolower($base) . '"' . $params;
+                [$base, $params] = explode(';', $identifier, 2);
+                $identifier = '"' . strtolower($base) . '";' . $params;
             }
 
             return Item::fromHttpValue($identifier);
