@@ -97,6 +97,8 @@ try {
 
 Use `UrlSigner` and `UrlVerifier` when the signature needs to live in the URL instead of HTTP headers.
 
+RFC 9421 does not define a signed URL format. This package provides URL signing as a convenience API that applies the same component derivation, signature base, parameters, and algorithms to a URL-carried signature.
+
 ```php
 use Http\Factory\Guzzle\RequestFactory;
 use HttpMessageSignatures\Algorithm\HmacSha256;
