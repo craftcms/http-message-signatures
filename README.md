@@ -93,6 +93,49 @@ try {
 }
 ```
 
+### Signing URLs
+
+Use `UrlSigner` and `UrlVerifier` when the signature needs to live in the URL instead of HTTP headers.
+
+```php
+use Http\Factory\Guzzle\RequestFactory;
+use HttpMessageSignatures\Algorithm\HmacSha256;
+use HttpMessageSignatures\Url\UrlSigner;
+use HttpMessageSignatures\Url\UrlSigningConfig;
+use HttpMessageSignatures\Url\UrlVerifier;
+
+$algorithm = new HmacSha256('your-secret-key');
+$requestFactory = new RequestFactory();
+
+$config = new UrlSigningConfig(
+    components: ['@target-uri'],
+    signatureParam: 'signature',
+);
+
+$signer = new UrlSigner($algorithm, $requestFactory, $config);
+$verifier = new UrlVerifier($algorithm, $requestFactory, $config);
+
+$signedUrl = $signer->sign('https://example.com/image.jpg?w=800');
+
+if ($verifier->verify($signedUrl)) {
+    echo "URL signature is valid!\n";
+}
+```
+
+Signed URLs only include the configured signature query parameter. The component list and signature parameters are verifier policy, so the signer and verifier must be configured with the same `UrlSigningConfig`.
+
+By default, URL signatures cover `@target-uri`, append a `signature` query parameter, and omit `created`/`expires`. Configure `components`, `signatureParam`, `created`, `expiresAfter`, `keyid`, `nonce`, or `tag` when those values are part of your URL signing policy.
+
+```php
+$config = UrlSigningConfig::withCurrentTime(
+    components: ['@path', '@query'],
+    signatureParam: 'sig',
+    expiresAfter: 300,
+);
+```
+
+When signing or verifying non-GET URLs, pass a PSR-7 `RequestInterface` so the request method can be included with `@method`.
+
 ### Using RSA-SHA256
 
 ```php
